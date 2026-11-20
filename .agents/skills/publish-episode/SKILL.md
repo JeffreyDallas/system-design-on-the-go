@@ -12,4 +12,4 @@ sd-podcast upload --slug <slug>
 sd-podcast publish --slug <slug>
 ```
 
-Verify the page has a native audio player, a transcript closed by default, escaped metadata, source links, and the AI-voice disclosure. Never put credentials or MP3s in Git. The RSS feed includes only episodes with public audio URLs.
+Verify the page has a native audio player, a transcript closed by default, escaped metadata, source and research links, the AI-voice disclosure, and a copyright contact/removal notice. Never put credentials or MP3s in Git. The RSS feed includes only episodes with public audio URLs.

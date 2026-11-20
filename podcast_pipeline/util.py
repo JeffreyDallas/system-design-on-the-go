@@ -11,6 +11,9 @@ from urllib.parse import urlsplit
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent.parent
+MAX_EPISODE_SECONDS = 20 * 60
+MAX_SCRIPT_WORDS = 2_600
+TRANSCRIPT_FORMAT = "conversation-v1"
 load_dotenv(ROOT / ".env")
 
 

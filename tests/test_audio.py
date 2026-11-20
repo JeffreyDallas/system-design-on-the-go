@@ -36,3 +36,19 @@ def test_tts_segment_caching_and_mp3_assembly(monkeypatch, tmp_path):
     assert [voice for _, voice in calls] == ["voice-a", "voice-b"]
     tts.render_audio(episode, folder)
     assert len(calls) == 2  # no paid synth calls on rerun
+
+
+def test_duration_budget_is_hard():
+    assert tts.validate_duration(20 * 60) == 20 * 60
+    with pytest.raises(RuntimeError, match="maximum is 20 minutes"):
+        tts.validate_duration(20 * 60 + 0.01)
+
+
+def test_local_provider_uses_free_voice_path(monkeypatch, tmp_path):
+    monkeypatch.setenv("TTS_PROVIDER", "local")
+    monkeypatch.setenv("LOCAL_VOICE_A", "Samantha")
+    monkeypatch.setenv("LOCAL_VOICE_B", "Alex")
+    provider, voice_a, voice_b, synth, model = tts._provider_settings()
+    assert provider == "local"
+    assert (voice_a, voice_b, model) == ("Samantha", "Alex", "macos-say")
+    assert synth is tts._local_tts_segment

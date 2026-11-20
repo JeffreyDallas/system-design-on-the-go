@@ -12,7 +12,7 @@ An open-source, agent-friendly system that turns system-design sources and engin
 Public HTTPS articles / local text + engineering problem
       │
       ▼
- Source extraction → design brief (source-grounded facts, assumptions, alternatives)
+Source extraction → design brief (source-grounded facts, assumptions, alternatives)
       │
       ▼
  Two peer engineers' original dialogue (OpenAI Responses API)
@@ -43,6 +43,8 @@ pip install -e '.[dev]'
 cp .env.example .env
 # Fill in your own keys (never commit .env)
 ```
+
+The template is the hidden root file [.env.example](.env.example); use `ls -la` or enable hidden files in your editor if it is not visible.
 
 Preview the site **without any AI credentials or API cost**:
 
@@ -86,6 +88,17 @@ An unchanged existing script is reused. Changed script turns must be reapproved;
 
 - **Dialogue:** OpenAI Responses API, `SCRIPT_MODEL` configurable (`gpt-4.1-mini` example default). Two-pass generation: design brief then conversation; all source content is untrusted input.
 - **Audio:** ElevenLabs Text-to-Speech REST API, distinct `ELEVENLABS_VOICE_A` and `ELEVENLABS_VOICE_B`, default `eleven_multilingual_v2` for stable, long-form voice consistency. Select voices from the official library and specify voice IDs in `.env`.
+- **Free local audio testing:** Set `TTS_PROVIDER=local` on macOS to use built-in `say` voices (`LOCAL_VOICE_A` and `LOCAL_VOICE_B`) and ffmpeg, with no ElevenLabs API calls. This is useful for validating the pipeline; use ElevenLabs for production voice quality.
+
+To try local audio without ElevenLabs, set these values in `.env`:
+
+```env
+TTS_PROVIDER=local
+LOCAL_VOICE_A=Samantha
+LOCAL_VOICE_B=Alex
+```
+
+Check installed voice names with `say -v '?'`, then run the normal approved `render` command. Local audio is for development and still produces the same MP3 format and 20-minute validation path.
 - **Editing/assembly:** ffmpeg joins per-turn MP3 files into a single standardized MP3; ffprobe validates duration.
 - **Alternative providers:** Both script creation and speech synthesis are intentionally isolated in `writer.py` and `tts.py`. Replace or add a provider without changing the rest of the pipeline. OpenAI's older Speech API TTS models are scheduled to shut down in January 2027, so this starter does not depend on them.
 
@@ -136,12 +149,15 @@ Agents should read `AGENTS.md` then the task-specific skill, and operate the det
 ## Safety, reliability and limitations
 
 - **Prompt injection:** Sources are untrusted. Page text is not a user or system instruction; the LLM prompt explicitly treats it as data. Local URL validation blocks non-HTTPS/private address requests on a best-effort basis. For multi-tenant Internet-facing products, use a fully isolated fetch service to prevent DNS rebinding or SSRF attacks.
+- **Code and CLI in sources:** Markdown fences and HTML code blocks are retained as non-spoken technical evidence for grounding, while the narrative source passed to dialogue generation omits them. The brief may preserve their architectural implications, but the spoken script must explain behavior in plain language without reproducing commands, flags, paths, syntax or copied snippets.
 - **Copyright and attribution:** Create original transformative discussions, credit sources and respect author licensing. Do not copy/publish full articles or unlicensed transcripts.
 - **Accuracy:** AI scripts require human verification; the design brief exposes assumptions and uncertainty. No automated formal fact-check guarantee.
+- **Research on gaps:** The source assessment triggers a required Responses API web-search pass when supplied material is too vague or incomplete. Cited HTTPS research links are saved in `episode.json` and rendered in the episode references; set `RESEARCH_ON_GAPS=false` only when deliberately stopping instead of filling the gaps.
 - **Script edits:** Edit `episode.json` only (canonical source). The script hash enforces reapproval after changes and invalidates old audio.
+- **Transcript format:** Source generation writes JSON `episode.json` using `conversation-v1`: ordered `{speaker, text}` turns with plain spoken text. HTML is a derived publication format generated later by `sd-podcast build-site`.
 - **Secrets and prices:** Environment variables only; never check in credentials. AI and storage usage are not free in general.
 - **Resumability:** Existing script and cached TTS turns are reused. On a failed upload/build, rerun the appropriate stage; partial changes are not published automatically.
-- **Media QA:** ffprobe validates file duration, but humans should listen to spot pronunciation and pacing issues. Single mixed MP3 currently lacks chapter timings and music.
+- **Media QA:** ffprobe validates file duration and rejects episodes longer than 20 minutes, but humans should listen to spot pronunciation and pacing issues. Single mixed MP3 currently lacks chapter timings and music.
 - **Publication:** Static website preview can be built offline, but actual voice calls, bucket access, Pages deployment and public reachability cannot be verified without live credentials.
 
 ## Tests

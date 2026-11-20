@@ -22,7 +22,8 @@ def public_link(url: str) -> str:
 
 
 def base_html(title: str, content: str, relative: str, meta_description: str) -> str:
-    repo_url = public_link(read_json(ROOT / "site.json").get("repo_url", ""))
+    config = read_json(ROOT / "site.json")
+    repo_url = public_link(config.get("repo_url", ""))
     repo_link = (f'<a href="{h(repo_url)}" target="_blank" rel="noopener noreferrer">Source code</a>'
                  if repo_url and "YOUR-USERNAME" not in repo_url else "")
     return f'''<!doctype html>
@@ -35,7 +36,8 @@ def base_html(title: str, content: str, relative: str, meta_description: str) ->
 <header class="masthead"><a class="brand" href="{relative}"><span class="brand-mark">S</span> System Design <span class="muted">on the Go</span></a>
 <nav><a href="{relative}">Episodes</a><a href="{relative}feed.xml">RSS</a>{repo_link}</nav></header>
 <main id="main">{content}</main>
-<footer>AI-generated voices and dialogue. Verify engineering decisions against their sources. <span>© System Design on the Go</span></footer>
+<footer>AI-generated voices and dialogue. Verify engineering decisions against their sources. <span>© System Design on the Go</span><br>
+Copyright concern? <a href="{h(public_link(config.get('copyright_contact_url', '')) or repo_url)}" target="_blank" rel="noopener noreferrer">Contact us to request review or removal.</a></footer>
 </div></body></html>'''
 
 

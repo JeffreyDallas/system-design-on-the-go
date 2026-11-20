@@ -26,6 +26,7 @@ def test_review_checkpoint_and_resume(monkeypatch, tmp_path):
     monkeypatch.setattr(writer_mod, 'generate', generate)
     folder, ep, created = cli.create_episode(slug, 'A meaningful cache design problem', ['example.md'])
     assert created
+    assert ep['transcript_format'] == 'conversation-v1'
     assert not ep['approved_script_hash']
     assert calls['n'] == 1
     _, _, created_again = cli.create_episode(slug, 'A changed prompt', ['example2.md'])

@@ -6,6 +6,7 @@ production multi-tenant deployment should fetch through a hardened proxy.
 from __future__ import annotations
 
 import ipaddress
+import re
 import socket
 from pathlib import Path
 from urllib.parse import urljoin, urlsplit
@@ -18,6 +19,19 @@ from .util import ROOT
 MAX_BYTES = 2_000_000
 MAX_TEXT_CHARS = 16_000
 MAX_SOURCES = 8
+MAX_ARTIFACT_CHARS = 8_000
+
+
+def _split_markdown(text: str) -> tuple[str, str]:
+    """Keep code available as evidence, but out of the spoken-source text."""
+    blocks: list[str] = []
+
+    def replace(match: re.Match[str]) -> str:
+        blocks.append(match.group(0).strip())
+        return "\n[NON-SPOKEN CODE OR CLI ARTIFACT OMITTED FROM NARRATION]\n"
+
+    narrative = re.sub(r"(?ms)^(`{3,}|~{3,})[^\n]*\n.*?^\1\s*$", replace, text)
+    return narrative, "\n\n".join(blocks)[:MAX_ARTIFACT_CHARS]
 
 
 def validate_remote_url(url: str) -> None:
@@ -35,7 +49,7 @@ def validate_remote_url(url: str) -> None:
             raise ValueError("Sources cannot resolve to private or reserved addresses")
 
 
-def fetch_url(url: str) -> tuple[str, str]:
+def fetch_url(url: str) -> tuple[str, str, str]:
     with httpx.Client(timeout=25, follow_redirects=False, trust_env=False, headers={"User-Agent": "SystemDesignOnTheGo/0.1 (+source reader)"}) as client:
         for _ in range(5):
             validate_remote_url(url)
@@ -57,14 +71,22 @@ def fetch_url(url: str) -> tuple[str, str]:
                         raise ValueError("Source exceeds 2 MB extraction cap")
                 text = bytes(body).decode(response.encoding or "utf-8", errors="replace")
                 if "html" not in content_type:
-                    return url, text[:MAX_TEXT_CHARS]
+                    narrative, artifacts = _split_markdown(text)
+                    return url, narrative[:MAX_TEXT_CHARS], artifacts
                 soup = BeautifulSoup(text, "html.parser")
                 title = soup.title.get_text(" ", strip=True) if soup.title else url
+                artifacts = "\n\n".join(
+                    tag.get_text(" ", strip=True)
+                    for tag in soup.select("pre, code")
+                    if tag.get_text(" ", strip=True)
+                )[:MAX_ARTIFACT_CHARS]
                 for tag in soup.select("script,style,nav,footer,header,aside,noscript,form"):
+                    tag.decompose()
+                for tag in soup.select("pre, code"):
                     tag.decompose()
                 element = soup.select_one("article") or soup.select_one("main") or soup.body or soup
                 cleaned = element.get_text(" ", strip=True)
-                return title, cleaned[:MAX_TEXT_CHARS]
+                return title, cleaned[:MAX_TEXT_CHARS], artifacts
         raise ValueError("Too many source redirects")
 
 
@@ -74,15 +96,19 @@ def collect_sources(inputs: list[str]) -> list[dict]:
     sources = []
     for index, entry in enumerate(inputs, start=1):
         if entry.startswith("https://"):
-            title, content = fetch_url(entry)
-            sources.append({"id": f"S{index}", "title": title[:160], "url": entry, "text": content})
+            title, content, artifacts = fetch_url(entry)
+            sources.append({"id": f"S{index}", "title": title[:160], "url": entry,
+                            "text": content, "technical_artifacts": artifacts})
         else:
             path = Path(entry).expanduser().resolve()
             if path.suffix.lower() not in (".txt", ".md"):
                 raise ValueError("Local source files must be .txt or .md")
             if not path.is_file() or path.stat().st_size > MAX_BYTES:
                 raise ValueError(f"Missing or oversized source: {entry}")
-            sources.append({"id": f"S{index}", "title": path.stem, "url": "", "text": path.read_text(encoding="utf-8")[:MAX_TEXT_CHARS]})
+            narrative, artifacts = _split_markdown(path.read_text(encoding="utf-8"))
+            sources.append({"id": f"S{index}", "title": path.stem, "url": "",
+                            "text": narrative[:MAX_TEXT_CHARS],
+                            "technical_artifacts": artifacts})
         if len(sources[-1]["text"]) < 80:
             raise ValueError(f"Too little readable content in source {entry}")
     return sources

@@ -6,7 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from podcast_pipeline.util import script_hash, slug_check
+from podcast_pipeline.util import MAX_SCRIPT_WORDS, script_hash, slug_check
+from podcast_pipeline.sources import _split_markdown
+from podcast_pipeline import writer
 from podcast_pipeline.writer import validate_script
 from podcast_pipeline.website import build_site, episode_html, feed_xml, index_html
 
@@ -41,6 +43,77 @@ def test_script_validation_and_hash_change():
         validate_script(ep)
 
 
+def test_source_code_is_retained_as_non_spoken_artifact():
+    narrative, artifacts = _split_markdown(
+        "The service uses an atomic counter.\n\n```bash\nredis-cli INCR quota\n```\n"
+    )
+    assert "atomic counter" in narrative
+    assert "redis-cli INCR quota" not in narrative
+    assert "redis-cli INCR quota" in artifacts
+
+
+def test_script_rejects_shell_snippets():
+    script = {"title": "Design", "description": "Discussion", "turns": [
+        {"speaker": "A" if i % 2 == 0 else "B", "text":
+         ("We should discuss the design trade-offs and failure behavior carefully."
+          if i != 0 else "We should test it in a shell.\n$ redis-cli INCR quota")}
+        for i in range(8)
+    ]}
+    with pytest.raises(ValueError, match="shell snippets"):
+        validate_script(script)
+
+
+def test_script_rejects_oversized_dialogue():
+    text = "architecture tradeoff " * (MAX_SCRIPT_WORDS // 2 + 1)
+    script = {"title": "Design", "description": "Discussion", "turns": [
+        {"speaker": "A" if i % 2 == 0 else "B", "text": text[:3500]}
+        for i in range(12)
+    ]}
+    with pytest.raises(ValueError, match="spoken words"):
+        validate_script(script)
+
+
+def test_incomplete_sources_keep_only_cited_research_links(monkeypatch):
+    class Annotation:
+        def __init__(self, url, title):
+            self.type = "url_citation"
+            self.url = url
+            self.title = title
+
+    class Content:
+        def __init__(self, annotations):
+            self.annotations = annotations
+
+    class Item:
+        def __init__(self, content):
+            self.content = content
+
+    class Response:
+        output = [Item([Content([
+            Annotation("https://docs.example.com/design", "Design docs"),
+            Annotation("http://unsafe.example.com", "Not HTTPS"),
+        ])])]
+
+    def fake_call(system_prompt, user_prompt, *, web_search=False):
+        assert web_search
+        return ({"research_summary": "Added the missing failure-handling context.",
+                 "sources": [{"source_id": "R1", "title": "Design docs",
+                              "url": "https://docs.example.com/design",
+                              "why_relevant": "Explains recovery."}]}, Response())
+
+    monkeypatch.setattr(writer, "_call_json", fake_call)
+    research, refs = writer._research_if_needed(
+        "Design a resilient service",
+        "The source describes only the happy path.",
+        {"source_assessment": {"sufficient": False,
+                                "research_questions": ["How does recovery work?"]}},
+    )
+
+    assert research["sources"] == [{"id": "R1", "title": "Design docs",
+                                     "url": "https://docs.example.com/design"}]
+    assert refs == research["sources"]
+
+
 def test_transcript_hidden_and_escaped():
     html = episode_html(valid_episode())
     assert "<details>" in html and "<details open" not in html
@@ -49,6 +122,8 @@ def test_transcript_hidden_and_escaped():
     assert "&lt;script&gt;" in html
     assert "&lt;img src=x&gt;" in html
     assert "Engineer A" in html and "Engineer B" in html
+    assert "Copyright concern?" in html
+    assert "Contact us to request review or removal" in html
 
 
 def test_audio_url_scheme_blocked():

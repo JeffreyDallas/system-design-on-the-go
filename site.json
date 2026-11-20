@@ -2,8 +2,9 @@
   "name": "System Design on the Go",
   "tagline": "Two engineers. One problem. Better architecture.",
   "description": "System design through collaborative engineering conversations. AI-generated audio; thoughtfully reviewed technical content.",
-  "site_url": "https://YOUR-USERNAME.github.io/system-design-on-the-go/",
+  "site_url": "https://jeffreydallas.github.io/system-design-on-the-go/",
   "author": "System Design on the Go",
   "language": "en-US",
-  "repo_url": "https://github.com/YOUR-USERNAME/system-design-on-the-go"
+  "repo_url": "https://github.com/JeffreyDallas/system-design-on-the-go",
+  "copyright_contact_url": "https://github.com/JeffreyDallas/system-design-on-the-go/issues"
 }

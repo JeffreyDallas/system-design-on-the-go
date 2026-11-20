@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from .util import ROOT, episode_dir, read_json, save_json, script_hash, sha256, utcnow
+from .util import TRANSCRIPT_FORMAT, ROOT, episode_dir, read_json, save_json, script_hash, sha256, utcnow
 from .writer import validate_script
 
 
@@ -35,13 +35,16 @@ def create_episode(slug: str, problem: str | None, sources: list[str] | None) ->
     extracted = collect_sources(sources)
     brief, draft = generate(problem, extracted)
     save_json(folder / "design-brief.json", brief)
+    research_refs = brief.get("research", {}).get("sources", [])
     ep = {
         "slug": slug,
+        "transcript_format": TRANSCRIPT_FORMAT,
         "title": draft["title"],
         "description": draft["description"],
         "problem": problem,
         "created_at": utcnow(),
-        "references": [{k:s[k] for k in ("id", "title", "url")} for s in extracted],
+        "references": ([{k:s[k] for k in ("id", "title", "url")} for s in extracted]
+                       + research_refs),
         "turns": draft["turns"],
         "approved_script_hash": "",
         "rendered_script_hash": "",
@@ -122,6 +125,7 @@ def demo() -> None:
     if not (folder / "episode.json").exists():
         ep = {
             "slug": "demo-distributed-rate-limiter",
+            "transcript_format": TRANSCRIPT_FORMAT,
             "title": "Designing a Distributed Rate Limiter",
             "description": "Two colleagues compare a shared Redis counter with locally enforced token buckets, from consistency to failure recovery.",
             "problem": "Protect an API with a distributed rate limiter while keeping latency low and avoiding a shared-service outage taking down requests.",
