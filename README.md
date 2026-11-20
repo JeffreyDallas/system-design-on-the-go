@@ -219,6 +219,10 @@ pytest -q
 sd-podcast build-site
 ```
 
+## Workflow security checks
+
+`.github/workflows/zizmor.yml` audits the GitHub Actions workflows with [zizmor](https://github.com/zizmorcore/zizmor). It runs on every pull request and on any push that touches `.github/workflows/**` or `.github/actions/**`, so workflow changes anywhere are reviewed for security issues before they reach `main`. Contributors cannot trigger Actions directly; their PR is the trigger.
+
 ## Project layout
 
 ```text

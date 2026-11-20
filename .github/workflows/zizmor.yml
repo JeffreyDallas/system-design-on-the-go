@@ -2,7 +2,10 @@ name: GitHub Actions security check
 
 on:
   push:
-    branches: [main]
+    branches: ["**"]
+    paths:
+      - '.github/workflows/**'
+      - '.github/actions/**'
   pull_request:
     branches: ["**"]
   workflow_dispatch:
