@@ -6,12 +6,12 @@ import json
 import sys
 from pathlib import Path
 
-from .sources import collect_sources
+from .sources import MAX_SOURCES, collect_sources
 from .storage import upload_audio
 from .tts import render_audio
-from .util import TRANSCRIPT_FORMAT, episode_dir, read_json, save_json, script_hash, sha256, slug_check, utcnow
+from .util import TRANSCRIPT_FORMAT, episode_dir, read_json, save_json, script_hash, sha256, slug_check, slugify, utcnow
 from .website import build_site
-from .writer import generate, validate_script
+from .writer import generate, infer_episode_context, validate_script
 
 
 def _write_run_report(folder: Path, ep: dict, *, generation=None, tts=None, stage="run") -> None:
@@ -155,6 +155,103 @@ def publish(folder: Path, ep: dict) -> dict:
     return ep
 
 
+def _prompt_text(prompt: str) -> str:
+    while True:
+        value = input(prompt).strip()
+        if value:
+            return value
+        print("Please enter a value.")
+
+
+def _prompt_source_count() -> int:
+    while True:
+        raw = _prompt_text(f"How many source resources? (1-{MAX_SOURCES}): ")
+        try:
+            count = int(raw)
+        except ValueError:
+            count = 0
+        if 1 <= count <= MAX_SOURCES:
+            return count
+        print(f"Enter a whole number from 1 to {MAX_SOURCES}.")
+
+
+def interactive_run(*, approve: bool = False) -> None:
+    """Run the end-to-end workflow through an interactive CLI session."""
+    print("System Design on the Go — interactive episode builder")
+    source_count = _prompt_source_count()
+    sources = [
+        _prompt_text(f"Resource {index} (HTTPS URL or .md/.txt path): ")
+        for index in range(1, source_count + 1)
+    ]
+    print("\nBuild plan")
+    print("  Episode title and engineering problem: inferred from resources")
+    print(f"  Resources: {len(sources)}")
+    print("  Stages: collect → design brief → dialogue → review → audio → upload → site")
+    extracted = collect_sources(sources)
+    title, problem = infer_episode_context(extracted)
+    context_usage = getattr(infer_episode_context, "last_usage", [])
+    slug = slugify(title)
+    slug_check(slug)
+    print(f"  Inferred title: {title}")
+    print(f"  Inferred slug: {slug}")
+    folder, ep, created = create_episode_from_sources(slug, problem, extracted, title, context_usage)
+    if not created:
+        print("Existing episode found; resuming its current state.")
+    current = script_hash(ep)
+    if (ep.get("published_at") and ep.get("audio_url")
+            and ep.get("approved_script_hash") == current
+            and ep.get("rendered_script_hash") == current):
+        build_site()
+        print("Already published this exact script; rebuilt the website without paid stages.")
+        return
+    if not approve:
+        print(f"Review the generated script at {folder / 'episode.json'}.")
+        if _prompt_text("Continue to paid audio and publication after review? [y/N]: ").lower() not in {"y", "yes"}:
+            print("Paused at the human review checkpoint.")
+            return
+    ep = approve_episode(folder, ep)
+    ep = render(folder, ep)
+    ep = upload(folder, ep)
+    publish(folder, ep)
+
+
+def approve_episode(folder: Path, ep: dict) -> dict:
+    """Approve a script after an interactive review or explicit --approve."""
+    return approve(folder, ep)
+
+
+def create_episode_from_sources(slug: str, problem: str, sources: list[dict], title: str,
+                                context_usage: list[dict]) -> tuple[Path, dict, bool]:
+    """Create an episode from already-collected sources for interactive runs."""
+    folder = episode_dir(slug)
+    if (folder / "episode.json").exists():
+        folder, ep = _load(slug)
+        print(f"Reusing existing script: {folder / 'episode.json'}")
+        return folder, ep, False
+    folder.mkdir(parents=True, exist_ok=True)
+    brief, draft = generate(problem, sources)
+    research_refs = brief.get("research", {}).get("sources", [])
+    ep = {
+        "slug": slug,
+        "transcript_format": TRANSCRIPT_FORMAT,
+        "title": title or draft["title"],
+        "description": draft["description"],
+        "problem": problem,
+        "created_at": utcnow(),
+        "references": ([{k: source[k] for k in ("id", "title", "url")} for source in sources]
+                       + research_refs),
+        "turns": draft["turns"],
+        "approved_script_hash": "",
+        "rendered_script_hash": "",
+        "audio_url": "",
+    }
+    _save(folder, ep)
+    _write_run_report(folder, ep, generation=context_usage + getattr(generate, "last_usage", []), stage="new")
+    print(f"Script created: {folder / 'episode.json'}")
+    print(f"Design brief: {folder / 'design-brief.json'}")
+    return folder, ep, True
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="sd-podcast", description="AI collaborative system design podcast workflow")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -169,6 +266,8 @@ def main(argv: list[str] | None = None) -> None:
                        help="Local .md/.txt file or public HTTPS URL; repeat for up to 8 sources")
         if command == "run":
             p.add_argument("--approve", action="store_true", help="Approve the current script and continue with paid TTS and upload")
+    interactive = sub.add_parser("interactive", aliases=["start"], help="Interactively collect inputs and build an episode", description="Interactively collect inputs and build an episode")
+    interactive.add_argument("--approve", action="store_true", help="Skip the interactive human review prompt")
     for command, summary in (
         ("render", "Synthesize the approved script into one MP3"),
         ("upload", "Upload the rendered MP3 to Cloudflare R2"),
@@ -182,6 +281,8 @@ def main(argv: list[str] | None = None) -> None:
         if args.command == "build-site":
             count, path = build_site()
             print(f"Built {count} episode pages in {path}")
+        elif args.command in ("interactive", "start"):
+            interactive_run(approve=args.approve)
         elif args.command in ("new", "run"):
             folder, ep, created = create_episode(args.slug, args.problem, args.source)
             if args.command == "new":

@@ -79,6 +79,14 @@ sd-podcast publish    --slug ...
 sd-podcast build-site
 ```
 
+For an agent-style guided session, run:
+
+```bash
+sd-podcast interactive
+```
+
+The command asks only for the number of source resources, then collects each URL or local `.md`/`.txt` path as a numbered input. It uses one compact, low-output model pass over the resources to infer a concise episode title, engineering problem, and safe slug before starting the design brief and dialogue stages. By default it pauses at the human review checkpoint before paid audio, upload, and publication; use `sd-podcast start` as a shorter alias, or add `--approve` only for an intentionally unattended run.
+
 ### Run the complete workflow from Python
 
 The same end-to-end workflow can be invoked from Python. `--approve` opts out of the human script-review pause, so use it only for an intentionally unattended run:

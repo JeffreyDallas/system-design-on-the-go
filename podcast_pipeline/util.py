@@ -6,6 +6,7 @@ import os
 import re
 import sys
 import time
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -27,6 +28,14 @@ def slug_check(slug: str) -> str:
     if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", slug) or len(slug) > 70:
         raise ValueError("Slug must be lowercase hyphenated characters, max 70")
     return slug
+
+
+def slugify(value: str) -> str:
+    """Create a safe, deterministic episode slug from generated text."""
+    normalized = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode()
+    slug = re.sub(r"[^a-z0-9]+", "-", normalized.lower()).strip("-")
+    slug = slug[:70].rstrip("-")
+    return slug or "episode"
 
 
 def episode_dir(slug: str) -> Path:

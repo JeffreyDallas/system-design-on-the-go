@@ -67,3 +67,46 @@ def test_publish_rejects_replaced_audio(tmp_path):
     (folder / 'episode.mp3').write_bytes(b'replaced')
     with pytest.raises(ValueError, match='matching the current script'):
         cli.publish(folder, ep)
+
+
+def test_interactive_builder_collects_numbered_sources_and_runs_pipeline(monkeypatch, tmp_path):
+    answers = iter([
+        "2",
+        "https://example.com/one",
+        "notes.md",
+        "yes",
+    ])
+    monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
+    folder = tmp_path / "interactive-episode"
+    folder.mkdir()
+    ep = {"slug": "interactive-episode", "turns": _dummy_script()["turns"]}
+    calls = []
+
+    monkeypatch.setattr(cli, "collect_sources", lambda sources: [
+        {"id": "S1", "title": "One", "url": sources[0], "text": "source one"},
+        {"id": "S2", "title": "Two", "url": "", "text": "source two"},
+    ])
+    monkeypatch.setattr(cli, "infer_episode_context", lambda sources: (
+        calls.append(("infer", sources)) or ("Interactive Episode", "Design a resilient event ingestion service")
+    ))
+    monkeypatch.setattr(cli, "create_episode_from_sources", lambda slug, problem, sources, title, context_usage: (
+        calls.append((slug, problem, sources, title)) or (folder, ep, True)
+    ))
+    monkeypatch.setattr(cli, "approve_episode", lambda folder, episode: calls.append("approve") or episode)
+    monkeypatch.setattr(cli, "render", lambda folder, episode: calls.append("render") or episode)
+    monkeypatch.setattr(cli, "upload", lambda folder, episode: calls.append("upload") or episode)
+    monkeypatch.setattr(cli, "publish", lambda folder, episode: calls.append("publish") or episode)
+
+    cli.interactive_run()
+
+    assert calls == [
+        ("infer", [
+            {"id": "S1", "title": "One", "url": "https://example.com/one", "text": "source one"},
+            {"id": "S2", "title": "Two", "url": "", "text": "source two"},
+        ]),
+        ("interactive-episode", "Design a resilient event ingestion service", [
+            {"id": "S1", "title": "One", "url": "https://example.com/one", "text": "source one"},
+            {"id": "S2", "title": "Two", "url": "", "text": "source two"},
+        ], "Interactive Episode"),
+        "approve", "render", "upload", "publish",
+    ]
