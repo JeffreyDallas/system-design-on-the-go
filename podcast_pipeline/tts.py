@@ -11,6 +11,7 @@ from pathlib import Path
 
 import httpx
 
+from .costs import estimate_tts_cost
 from .util import MAX_EPISODE_SECONDS, ROOT, env, retry_call, sha256, script_hash
 
 
@@ -135,6 +136,13 @@ def render_audio(episode: dict, folder: Path) -> tuple[Path, float]:
     if a == b:
         raise ValueError("Choose distinct voice IDs for speaker A and B")
     voice_map = {"A": a, "B": b}
+    characters = sum(len(turn["text"]) for turn in episode["turns"])
+    render_audio.last_usage = {
+        "provider": provider,
+        "model": model,
+        "characters": characters,
+        "estimated_cost_usd": estimate_tts_cost(provider, characters),
+    }
     cache = ROOT / ".cache" / "tts"
     cache.mkdir(parents=True, exist_ok=True)
     files = []
@@ -170,3 +178,6 @@ def render_audio(episode: dict, folder: Path) -> tuple[Path, float]:
     finally:
         concat.unlink(missing_ok=True)
         temp.unlink(missing_ok=True)
+
+
+render_audio.last_usage = {}

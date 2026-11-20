@@ -83,6 +83,8 @@ An unchanged existing script is reused. Changed script turns must be reapproved;
 
 CLI operations report each blocking failure with an actionable next step and exit nonzero on failure. Transient speech and R2 upload errors use bounded exponential retries; rerunning a partially completed render reuses completed cached segments, and content-addressed uploads avoid duplicate media objects.
 
+Each generation/render/upload/publish step writes `episodes/<slug>/run-report.json` and prints measured model usage, TTS characters, and estimated USD cost. Token counts come from API responses; estimates use the configured/default rates and identify unpriced tool calls or providers.
+
 ## AI services and audio choices
 
 - **Dialogue:** OpenAI Responses API, `SCRIPT_MODEL` configurable (`gpt-4.1-mini` example default). Two-pass generation: design brief then conversation; all source content is untrusted input.

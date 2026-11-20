@@ -10,6 +10,32 @@ from .util import TRANSCRIPT_FORMAT, ROOT, episode_dir, read_json, save_json, sc
 from .writer import validate_script
 
 
+def _write_run_report(folder: Path, ep: dict, *, generation=None, tts=None, stage="run") -> None:
+    existing = read_json(folder / "run-report.json") if (folder / "run-report.json").exists() else {}
+    generation = generation if generation is not None else existing.get("models", [])
+    tts = tts if tts is not None else existing.get("tts", {})
+    model_cost = sum(
+        item["estimated_cost_usd"] for item in generation
+        if item.get("estimated_cost_usd") is not None
+    )
+    unpriced_model_calls = sum(1 for item in generation if item.get("estimated_cost_usd") is None)
+    tts_cost = (tts or {}).get("estimated_cost_usd")
+    total = None if unpriced_model_calls or tts_cost is None else round(model_cost + tts_cost, 6)
+    report = {
+        "generated_at": utcnow(),
+        "stage": stage,
+        "slug": ep.get("slug"),
+        "models": generation,
+        "tts": tts or {},
+        "estimated_total_cost_usd": total,
+        "cost_note": "Estimates use configured/default list rates and exclude storage, egress, and unpriced tool calls.",
+    }
+    path = folder / "run-report.json"
+    save_json(path, report)
+    print(f"Usage report: {path}")
+    print(f"Estimated AI cost: {'unavailable' if total is None else f'${total:.4f}'}")
+
+
 def _load(slug: str) -> tuple[Path, dict]:
     folder = episode_dir(slug)
     path = folder / "episode.json"
@@ -53,6 +79,7 @@ def create_episode(slug: str, problem: str | None, sources: list[str] | None) ->
         "audio_url": "",
     }
     _save(folder, ep)
+    _write_run_report(folder, ep, generation=getattr(generate, "last_usage", []), stage="new")
     print(f"Script created: {folder / 'episode.json'}")
     print(f"Design brief: {folder / 'design-brief.json'}")
     return folder, ep, True
@@ -82,6 +109,7 @@ def render(folder: Path, ep: dict) -> dict:
     ep["audio_url"] = ""  # Invalidates any previous upload on script change
     ep.pop("storage_key", None)
     _save(folder, ep)
+    _write_run_report(folder, ep, tts=getattr(render_audio, "last_usage", {}), stage="render")
     print(f"Audio ready: {path} ({seconds / 60:.1f} min)")
     return ep
 
@@ -98,6 +126,7 @@ def upload(folder: Path, ep: dict) -> dict:
     result = upload_audio(path, ep["slug"])
     ep.update(result)
     _save(folder, ep)
+    _write_run_report(folder, ep, stage="upload")
     print(f"Audio available at: {ep['audio_url']}")
     return ep
 
@@ -118,6 +147,7 @@ def publish(folder: Path, ep: dict) -> dict:
         ep["published_at"] = utcnow()
         _save(folder, ep)
     count, output = build_site()
+    _write_run_report(folder, ep, stage="publish")
     print(f"Site built: {output} ({count} episodes). Commit and push to publish via GitHub Actions.")
     return ep
 

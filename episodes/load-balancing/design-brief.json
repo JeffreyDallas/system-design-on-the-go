@@ -1,0 +1,174 @@
+{
+  "requirements": [
+    "Distribute incoming HTTP requests across multiple backend server instances",
+    "Maintain low latency for request processing and response",
+    "Achieve fairness in request distribution among servers with different capacities and workload costs",
+    "Support health-aware routing by adapting to server performance changes in real-time",
+    "Handle request spikes and overload scenarios gracefully to minimize dropped requests",
+    "Include operational simplicity and maintainability as the system scales to thousands of servers",
+    "Enable dynamic weighting or prioritization of backend servers based on metrics",
+    "Support fallback or rerouting mechanisms before dropping requests",
+    "Optimize for latency percentiles (median, 95th, 99th) and dropped request rates"
+  ],
+  "assumptions": [
+    "Backend instances vary in processing power and request cost can be highly variable",
+    "Metrics such as average request latency, number of outstanding connections, and queue lengths are available or can be collected per server in near real-time",
+    "Load balancer can maintain up-to-date state on server load metrics with low overhead",
+    "Network delays and slow start effects are minimal or can be mitigated",
+    "Dropping requests is a failure mode to avoid but might be unavoidable under peak overload"
+  ],
+  "alternatives": [
+    {
+      "name": "Round Robin",
+      "advantages": [
+        "Very simple to implement",
+        "Works well when servers and request costs are uniform",
+        "Good median latency"
+      ],
+      "disadvantages": [
+        "Does not account for variance in server power or request cost",
+        "Can cause imbalanced load and overload on weaker servers",
+        "Poor tail latency (95th and 99th percentiles)",
+        "High dropped request rates under load"
+      ]
+    },
+    {
+      "name": "Weighted Round Robin",
+      "advantages": [
+        "Distributes requests proportional to predefined server capacity",
+        "Improves fairness when server weights are accurate",
+        "Relatively simple to implement"
+      ],
+      "disadvantages": [
+        "Requires manual or offline calibration of server weights",
+        "Weights hard to maintain or estimate accurately in dynamic environments",
+        "Static weights do not adapt to changing server health or load"
+      ]
+    },
+    {
+      "name": "Dynamic Weighted Round Robin (based on latency)",
+      "advantages": [
+        "Weights adapt dynamically using observed server latency",
+        "Accounts for changes in server performance over time",
+        "Improves load distribution fairness compared to static weights"
+      ],
+      "disadvantages": [
+        "Latency as a proxy for capacity may be noisy or lagging",
+        "Additional complexity in collecting and computing weights",
+        "Still does not track per-server outstanding load precisely"
+      ]
+    },
+    {
+      "name": "Least Connections",
+      "advantages": [
+        "Simple and intuitive",
+        "Dynamically balances load by assigning new work to servers with least outstanding requests",
+        "Effective under high variance in request costs and server power",
+        "Better handling of overload and lower dropped requests than round robin"
+      ],
+      "disadvantages": [
+        "Does not consider server response latency explicitly",
+        "Can cause suboptimal latency for tail requests",
+        "Queues full across all servers can still lead to drops"
+      ]
+    },
+    {
+      "name": "PEWMA (Peak Exponentially Weighted Moving Average) Latency-based",
+      "advantages": [
+        "Optimizes for latency by prioritizing fastest and least-loaded servers",
+        "Smoothly adapts to performance changes using EWMA",
+        "Improves median and tail latency compared to least connections",
+        "Better latency distribution overall"
+      ],
+      "disadvantages": [
+        "More complex to implement and tune (multiple parameters)",
+        "May reduce overall utilization leading to more dropped requests under heavy load",
+        "Requires continual performance data and careful parameter configuration"
+      ]
+    }
+  ],
+  "failure_modes": [
+    "All backend server queues full causing request drops",
+    "Latency measurement lag causing suboptimal routing decisions",
+    "Incorrect server weight estimations causing imbalance",
+    "Network or metric collection failures leading to stale server state",
+    "Overload of specific servers due to uneven request cost or slow servers",
+    "Load balancer scaling bottleneck or state synchronization issues"
+  ],
+  "evidence": [
+    {
+      "source_id": "S1",
+      "claim": "Round Robin is simple but does not handle server or request variance well, resulting in poor fairness and higher dropped requests under load."
+    },
+    {
+      "source_id": "S1",
+      "claim": "Weighted Round Robin requires manual weights, which are often inaccurate or not maintained, limiting practical effectiveness."
+    },
+    {
+      "source_id": "S1",
+      "claim": "Dynamic Weighted Round Robin adapts weights based on real-time latency metrics, improving fairness dynamically."
+    },
+    {
+      "source_id": "S1",
+      "claim": "Least Connections uses current outstanding request counts and dynamically balances load well, especially under variable request costs."
+    },
+    {
+      "source_id": "S1",
+      "claim": "PEWMA algorithm further improves latency metrics by using EWMA latency and prioritizing fastest servers, albeit at higher complexity and risk of dropped requests."
+    }
+  ],
+  "uncertainties": [
+    "Real-world network latency and slow start effects on load balancer metrics",
+    "Cost and feasibility of collecting timely and accurate latency and connection metrics at large scale",
+    "Trade-offs between latency optimization and request drop rate under different traffic loads",
+    "Parameter tuning and adaptivity of PEWMA in diverse production scenarios",
+    "Interaction between load balancing algorithm and backend health checks or failure recovery"
+  ],
+  "source_assessment": {
+    "sufficient": false,
+    "gaps": [
+      "Quantitative comparison including overhead, scalability, and failure recovery",
+      "Impact of network latency and metric staleness on algorithm effectiveness",
+      "Operational complexity and tooling requirements for each algorithm",
+      "Best practices for fallback and rerouting before dropping requests",
+      "Empirical data from production or real workloads"
+    ],
+    "research_questions": [
+      "How to reliably and scalably collect and aggregate real-time server metrics at scale?",
+      "What are the optimal PEWMA parameters for typical web workloads?",
+      "How to balance latency improvements against increased dropped requests with complex algorithms?",
+      "How do load balancers interact with health check and failure detection mechanisms?",
+      "What are the operational cost and complexity trade-offs for each algorithm in production?"
+    ]
+  },
+  "research": {
+    "research_summary": "For a production HTTP load balancer that must keep latency low, stay fair under heterogeneous backends, handle health and failure gracefully, and remain operationally simple, the strongest practical baseline is health-aware least outstanding requests / least connections with well-tuned health checks and fallback behavior. AWS documents least outstanding requests as the preferred choice when request complexity or target capacity varies, while round robin is best only when targets and requests are similar. NGINX likewise emphasizes least connections and notes it can incorporate active connections plus response-time information in its least-time variant. The newer Google Prequal work shows that production systems can improve tail latency, errors, and resource use by routing with active probes and delayed-state estimates of latency and requests-in-flight, but it adds probe coordination and algorithmic complexity. AWS guidance and whitepapers also make clear that health checks are a complement, not a substitute, for routing decisions; if all targets are unhealthy some systems may fail open, and routing around failure depends on observability and health detection. In practice, metric staleness and network latency matter: delayed feedback can make sophisticated routing less reliable, which is why production algorithms often prefer directly observable in-flight request counts, conservative smoothing, and fallback to simpler policies when signals go stale or unhealthy. Operationally, the simpler algorithms require less tuning and tooling, while latency-aware algorithms can lower p95/p99 but usually demand extra instrumentation, probing, and careful parameter management. The main design implication is to prioritize a simple default path, then layer in bounded adaptivity: health checks, least-outstanding routing, retry/reroute before drop, and optional anomaly or latency bias only where the measurement pipeline is trustworthy.",
+    "evidence": [
+      {
+        "claim": "AWS recommends least outstanding requests when request complexity or target capacity varies, round robin when requests and targets are similar, and weighted random with anomaly mitigation to shift traffic away from gray failures or elevated latency.",
+        "source_id": "R1"
+      },
+      {
+        "claim": "AWS says a load balancer monitors target health and routes only to healthy targets; when a target becomes unhealthy it stops routing traffic to it and resumes when healthy again.",
+        "source_id": "R2"
+      },
+      {
+        "claim": "NGINX documents least connections / least-time as load-balancing methods, with least-time selecting the server with the lowest average response time and lowest number of active connections, taking inflight requests into account.",
+        "source_id": "R3"
+      },
+      {
+        "claim": "Google’s Prequal paper reports that active probing plus routing by estimated latency and in-flight requests reduced tail latency, errors, and resource use in production at YouTube and other systems, but it is a more complex design than basic least-connections routing.",
+        "source_id": "R4"
+      },
+      {
+        "claim": "AWS guidance for NLB target groups notes fail-open behavior when all targets are unhealthy and emphasizes health checks plus routing failover behavior to improve the chance that connections succeed.",
+        "source_id": "R5"
+      },
+      {
+        "claim": "AWS best-practices guidance recommends ELB health checks as a complementary safeguard outside the Kubernetes control plane.",
+        "source_id": "R6"
+      }
+    ],
+    "sources": []
+  }
+}
