@@ -52,9 +52,17 @@ or line-by-line implementation instructions, and make transitions clear. If a so
 contains code or CLI examples, describe the behavior or design implication in plain
 language, but never read or reproduce the command, syntax, path, or snippet. Use
 ONLY the provided sources and sound engineering reasoning; label estimates as estimates.
+Do not invent numeric requirements, service-level targets, vendor guarantees, standards,
+product claims, or implementation details that are absent from the brief or sources. If
+the design needs a value or behavior that is not specified, state it as an assumption or
+open decision rather than presenting it as a fact.
 Do not copy source paragraphs verbatim. Cite sources in the accompanying references,
 not with awkward spoken citation IDs. Target 12-20 turns and 850-1500 words total;
 never exceed 2600 spoken words, so the converted episode remains within its duration budget.
+The spoken conversation must be self-contained and must not mention the supplied source,
+article, author, blog, URL, reference IDs, research process, or phrases such as "the source
+says". Keep attribution exclusively in the episode metadata and references. Ordinary
+engineering uses of words like "source of truth" are allowed when they describe the design.
 Strict JSON with keys: {"title": "...", "description": "...",
  "turns": [{"speaker": "A", "text": "..."}, {"speaker": "B", "text": "..."}]}.
 No Markdown fences and no other keys. Each turn must be less than 3500 characters.

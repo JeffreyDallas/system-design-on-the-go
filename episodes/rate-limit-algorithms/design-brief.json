@@ -1,0 +1,149 @@
+{
+  "requirements": [
+    "Distribute API rate limiting across multiple gateways without centralized bottlenecks",
+    "Balance burst tolerance allowing short spikes without service degradation",
+    "Provide fairness so no single user can monopolize resources",
+    "Maintain accuracy in enforcing limits to prevent abuse",
+    "Keep latency low to avoid impacting API responsiveness",
+    "Ensure operational simplicity for maintainability and scalability",
+    "Support per-user or per-API-key rate limiting as primary keying",
+    "Gracefully handle failures of backing stores by failing open",
+    "Communicate rate limit state and wait times to consumers via standard HTTP mechanisms (e.g., 429 status, x-ratelimit headers)",
+    "Support both long-term average limits and burst capacity",
+    "Persist rate limit data in an external store to support horizontal scaling and server restarts"
+  ],
+  "assumptions": [
+    "Users are identified via stable IDs such as user IDs or API keys for rate limiting keys",
+    "Redis or similar external key-value store with expiry semantics is available for persistence",
+    "Operational environments require distributing rate limiting across multiple gateway instances",
+    "Operational simplicity favors algorithms with efficient state representation",
+    "Fail-open behavior is preferable to blocking all traffic on backend outage to maintain availability"
+  ],
+  "alternatives": [
+    {
+      "name": "Fixed Window Rate Limiter",
+      "advantages": [
+        "Simple to implement and understand",
+        "Predictable limits with fixed reset intervals",
+        "Low computational overhead"
+      ],
+      "disadvantages": [
+        "Allows bursts up to 2x limit when requests near window edges",
+        "User experience less smooth due to large immediate resets",
+        "Complications arise with timezone-based window alignment",
+        "Less suited for high volume, high concurrency scenarios"
+      ]
+    },
+    {
+      "name": "Sliding Window Rate Limiter (approximate/floating window)",
+      "advantages": [
+        "Smoother traffic distribution without large bursts",
+        "Better fairness in high traffic by weighted count approximation",
+        "Reduced memory usage compared to full sliding window timestamp recording"
+      ],
+      "disadvantages": [
+        "More complex to implement and understand",
+        "Less intuitive for end users regarding their limits",
+        "Slightly increased computational cost versus fixed window"
+      ]
+    },
+    {
+      "name": "Token Bucket Rate Limiter",
+      "advantages": [
+        "Supports burst traffic within configured bucket capacity",
+        "Enforces long-term average rate cleanly",
+        "Flexible and can mimic other algorithms by tuning parameters",
+        "Widely adopted in production systems for APIs"
+      ],
+      "disadvantages": [
+        "More complex logic to implement and explain to users",
+        "Communicating exact bucket state and refill timing is harder",
+        "Requires precise token refill scheduling"
+      ]
+    }
+  ],
+  "failure_modes": [
+    "Loss of connectivity or failure of persistent datastore causing inability to check or update limits",
+    "Clock skew or inconsistent timekeeping leading to incorrect window or token calculations",
+    "Incorrect keying causing unintended rate limit sharing or bypass",
+    "Users manipulating client-side parameters (time zone, IP, etc.) to gain extra requests",
+    "Eventual consistency issues causing brief limit overages or denials",
+    "Excessive state storage leading to storage or memory exhaustion in backing store"
+  ],
+  "evidence": [
+    {
+      "source_id": "S1",
+      "claim": "Fixed window limiters allow predictable rate limiting but permit bursts up to 2x the limit near window edges."
+    },
+    {
+      "source_id": "S1",
+      "claim": "Sliding windows smooth rate limiting by refilling capacity partially, using an efficient approximate method reduces high resource use."
+    },
+    {
+      "source_id": "S1",
+      "claim": "Token buckets allow bursts up to bucket capacity while enforcing a long-term average rate by token refill mechanisms."
+    },
+    {
+      "source_id": "S1",
+      "claim": "Persistent external storage like Redis is recommended for scalable, fault-tolerant rate limiting."
+    },
+    {
+      "source_id": "S1",
+      "claim": "Fail-open approach on store failure preserves service availability."
+    }
+  ],
+  "uncertainties": [
+    "Exact scale of traffic, number of gateway instances, and concurrency patterns to size the datastore and algorithm efficiency",
+    "Latency impact threshold acceptable by backend services for rate limiter checks",
+    "Effectiveness of approximations in sliding window algorithms under very high load",
+    "Trade-offs between per-user fairness and some needed shared limits for unauthenticated clients",
+    "Optimal token bucket parameters (bucket size, refill rate) for self-throttling burstiness on specific workloads"
+  ],
+  "source_assessment": {
+    "sufficient": false,
+    "gaps": [
+      "No concrete performance benchmarks comparing these algorithms at large scale under realistic loads",
+      "No explicit integration patterns for distributed coordination across multiple gateways",
+      "Lacks operational concerns for migrating existing services without downtime",
+      "No detailed discussion of latency measurements and costs for each algorithm implementation",
+      "Limited coverage of security risks in keying or time zone manipulations beyond anecdotal warning"
+    ],
+    "research_questions": [
+      "What are the latency and resource overheads of each rate limiting algorithm at scale with 1000+ gateways?",
+      "How to best synchronize rate limiting state across distributed gateways to avoid race conditions?",
+      "What are best practices for fallback and fail-open configurations without introducing abuse risk?",
+      "What operational telemetry and alerting are optimal to detect limiter misbehavior or attacks?",
+      "How can user experience be improved when communicating limits and wait times with token bucket schemes?"
+    ]
+  },
+  "research": {
+    "research_summary": "A distributed API rate limiter for multiple gateways is usually best implemented with a shared, external enforcement backend rather than in-memory counters per gateway. Envoy’s global rate limiting model illustrates the common pattern: each gateway calls an external rate-limit service, which consults a shared datastore such as Redis so that all gateways enforce the same quota consistently. This avoids per-gateway drift and enables a shared limit across the entire fleet, but it adds a network hop on the request path, so local caching or local fallback logic may be used for hot paths. Redis’s rate-limiting guidance explicitly supports fixed window, sliding window, and token bucket implementations on a single Redis deployment and notes that API gateways such as Envoy commonly use Redis for distributed rate limiting.\n\nFor algorithm choice, the operational trade-offs are still the familiar ones: fixed windows are simplest and cheapest to implement but can allow boundary bursts; sliding-window counters/logs improve fairness and smoothness but require more state and coordination; token buckets are generally the best fit when you need to permit short bursts while enforcing a long-term average. Redis’s current guidance recommends sliding-window counters as a strong default for distributed rate limiting, while token buckets are best when burst tolerance is a primary requirement. Because your design must balance burst tolerance, fairness, accuracy, latency, and simplicity, a practical production design is often hierarchical: a coarse local limiter at each gateway for fast shedding plus a global limiter backed by Redis for authoritative quota enforcement.\n\nTo avoid race conditions across gateways, the key requirement is atomic update-and-check semantics in the shared store. In practice, this means executing the limiter decision in Redis with an atomic primitive or server-side script rather than doing read-modify-write in the gateway. That keeps concurrent requests from different gateways from double-spending the same quota. Envoy’s global rate limiting documentation confirms the request flow: a gateway sends a descriptor to the external service for each request, and the service determines allow/deny using the shared backend. This is the main coordination pattern for multi-gateway deployments.\n\nFor availability and operational simplicity, RFC 6585 defines HTTP 429 Too Many Requests and says responses may include Retry-After to tell clients when to try again; RFC 9110 also defines Retry-After semantics. If the limiter store fails, RFC 6585 notes that under heavy attack it can be preferable to drop connections or otherwise reduce work instead of returning 429s to every request, because generating rejection responses also consumes resources. In normal service operation, many systems choose fail-open for limiter-store outages to preserve availability, but that must be paired with compensating controls such as local soft limits, circuit breakers, request sampling, and alerting so fail-open does not become an abuse path. This is a design choice rather than a standards requirement.\n\nTelemetry should focus on both enforcement correctness and backend health: allowance/denial counts, per-key saturation, Redis latency and error rate, descriptor cardinality, limit-hit rates by route and consumer, queueing or retry pressure, and discrepancies between local and global decisions. A good alerting model is to page on sustained spikes in store errors, sudden changes in deny rate, abnormal concentration on a small set of keys, and evidence that gateways are diverging in their local caches or time windows. Operationally, you should also version limiter rules, expose effective limits to clients, and stage migrations by shadow-evaluating new rules before enforcing them.\n\nFor user experience, the standards-backed guidance is to return 429 with a clear explanation and a Retry-After value when possible. Token-bucket systems are harder for users to reason about than fixed windows, so the best practice is to expose derived wait-time guidance rather than the raw token math: tell clients when they can retry, how much capacity remains, and optionally provide rate-limit headers. This makes burst-tolerant token buckets usable without forcing clients to infer refill dynamics themselves.",
+    "evidence": [
+      {
+        "claim": "Envoy Gateway supports global rate limiting via an external Rate Limit Service and a shared datastore such as Redis, enabling consistent limits across a fleet of gateways.",
+        "source_id": "R2"
+      },
+      {
+        "claim": "Redis documents that fixed window, sliding window, and token bucket algorithms can all run on a single Redis deployment, and that API gateways commonly use Redis for distributed rate limiting.",
+        "source_id": "R3"
+      },
+      {
+        "claim": "Redis recommends sliding-window counters as a default choice for distributed rate limiting, while token buckets are preferred when short bursts must be allowed but a long-term average rate must still be enforced.",
+        "source_id": "R4"
+      },
+      {
+        "claim": "RFC 6585 defines HTTP 429 Too Many Requests and allows Retry-After to communicate how long a client should wait before retrying.",
+        "source_id": "R1"
+      },
+      {
+        "claim": "RFC 6585 notes that when a server is under attack, returning 429 for every request may itself consume resources, so dropping connections or other mitigation may be more appropriate.",
+        "source_id": "R1"
+      },
+      {
+        "claim": "Envoy’s global rate limit filter sends a request to the rate-limit service for each request and returns 429 when the configured descriptors are over limit.",
+        "source_id": "R5"
+      }
+    ],
+    "sources": []
+  }
+}

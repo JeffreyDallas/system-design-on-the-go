@@ -1,0 +1,105 @@
+{
+  "slug": "rate-limit-algorithms",
+  "transcript_format": "conversation-v1",
+  "title": "Designing a Distributed API Rate Limiter Across Multiple Gateways",
+  "description": "A peer-to-peer technical design discussion co-creating a robust distributed API rate limiter. The conversation evaluates strong candidate algorithms, their trade-offs, failure modes, observability, and failure handling to balance burst tolerance, fairness, latency, and operational simplicity in a multi-gateway environment with an external Redis backing store.",
+  "problem": "Design a distributed API rate limiter that protects backend services while balancing burst tolerance, fairness, accuracy, latency, and operational simplicity across multiple gateways.",
+  "created_at": "2026-11-20T19:05:35+00:00",
+  "references": [
+    {
+      "id": "S1",
+      "title": "rate limiter – smudge.ai blog",
+      "url": "https://smudge.ai/blog/ratelimit-algorithms"
+    }
+  ],
+  "turns": [
+    {
+      "speaker": "A",
+      "text": "Let's start by outlining the essential requirements for our distributed API rate limiter. We need it to work across multiple gateways with no single point of bottleneck, allow bursts but still impose fairness so no user can starve others or monopolize resources, be accurate to avoid abuse, keep latency low so it doesn't slow down our API responsiveness, and be operationally simple enough to maintain and scale. Also, we have to support rules keyed by per-user or per-API-key, persist state in an external store like Redis for horizontal scaling and server restarts, and apply fail-open behavior when the backing store fails. Plus, we want to communicate rate limit status back to clients using standard HTTP status 429 and appropriate headers."
+    },
+    {
+      "speaker": "B",
+      "text": "Right. Given those requirements and assumptions, the crux is balancing the algorithm trade-offs. The choices typically boil down to fixed window, sliding window—usually an approximate kind for efficiency—and token bucket. Fixed window is the simplest but it allows bursts up to twice the limit near window boundaries, which can cause resource spikes. The sliding window smooths requests over time, improving fairness, but is more complex and less intuitive. Token buckets directly support bursts within the bucket size and control long-term average rates but come with their own complexity and challenges in communicating state to clients."
+    },
+    {
+      "speaker": "A",
+      "text": "Exactly. My initial intuition is to favor the token bucket model because we want to support bursts explicitly while keeping the long-term rate correct. The ability to tune bucket size lets us allow short spikes without degrading backend services. But I’m wary of its complexity from the user’s perspective and the need for precise token refill scheduling. Plus, expressing the bucket state and refill timing to clients isn’t straightforward."
+    },
+    {
+      "speaker": "B",
+      "text": "I agree token bucket is popular in production API gateways and aligns well with burst tolerance needs. However, sliding window approximations can get us a smoother, fairer limit enforcement with fewer race conditions, because the counts update by weighted approximation rather than discrete buckets. The operational overhead is a bit higher, but perhaps not prohibitive. Since we’re persisting state in Redis, which supports atomic Lua scripts, we can do the check and update atomically across gateways. That helps avoid concurrency problems. Atomic operations are a must to prevent double-spending of quotas under high concurrency."
+    },
+    {
+      "speaker": "A",
+      "text": "Good point on atomicity. Relying on Redis’s server-side scripts to perform the rate check and update atomically is crucial. That also means we do one network round-trip per request to the external store. That can add latency, so maybe we want some local gateway caching or a preliminary local limiter to avoid excessive calls on hot keys. For example, a local fixed window limiter with a small capacity could gate immediately frequent requests, then fall back to the external Redis-backed token bucket to validate across all gateways."
+    },
+    {
+      "speaker": "B",
+      "text": "I like the hierarchical approach: fast, approximate local checks for shedding excessive local traffic quickly to keep latency low, with authoritative, precise global checks asynchronously or synchronously via Redis. This combination would balance latency and accuracy while preventing overload spikes. We’d need to tune the local limits conservatively to avoid false rejections and benefit from fast local responses anyway."
+    },
+    {
+      "speaker": "A",
+      "text": "Regarding failure modes, we want fail-open behavior such that if Redis is down or unreachable, the limiter does not block traffic. It’s better to preserve availability than to risk a complete denial of legitimate requests. But that does open the door for potential abuse during such outage windows, so we should pair it with other controls like local rate limiting, alerting on the Redis store health, and maybe temporary degradation policies or circuit breakers."
+    },
+    {
+      "speaker": "B",
+      "text": "Absolutely, fail-open requires compensating safeguards. Monitoring Redis latency, error rates, and usage patterns should be part of our telemetry. We should keep metrics on allowance vs. denial counts, per-key saturation to spot hot keys, and alert on spikes that suggest abuse or misconfiguration. Also, if consistent keying is critical—for instance, user ID or stable API key—we have to be careful that clients can’t subvert limits by manipulating client-side parameters. Our design should use server-validated stable identifiers as the primary keys."
+    },
+    {
+      "speaker": "A",
+      "text": "On communicating limits to clients, standard HTTP 429 with Retry-After header is essential. For fixed window schemes, it’s relatively straightforward to tell clients when the next window opens. For token buckets, providing a meaningful Retry-After time based on expected token refill is trickier but necessary for good user experience. We'll need to calculate an estimated wait time for the client to regain tokens before retrying."
+    },
+    {
+      "speaker": "B",
+      "text": "Yes, exposing rate limit headers conveying limit, remaining quota, and reset time can help clients adjust their request rates. It might be difficult to expose the raw token counts or refill rate directly, so deriving a wait time metric client-side helps make bursts manageable and clients more compliant. Documentation will also be necessary to explain this behavior clearly."
+    },
+    {
+      "speaker": "A",
+      "text": "To sum up our proposal: a distributed, Redis-backed token bucket rate limiter, where each gateway atomically checks and updates token counts via Redis Lua scripts to maintain consistency across the fleet. Gateways implement optional local fixed window limiting to reduce Redis call volume and drop obvious bursts early, configured conservatively to avoid false positives. The rate limiter fails open on Redis errors but triggers alerts and relies on local fallback."
+    },
+    {
+      "speaker": "B",
+      "text": "Agreed. We’ll key limits on stable user IDs or API keys and use atomic increments and expiry semantics in Redis to enforce limits with proper TTLs. We’ll return HTTP 429 with Retry-After headers indicating wait times derived from token refill calculations. Telemetry covers per-key usage, denial ratios, Redis latencies, and failure rates. We’ll design operational dashboards and alerts for these signals to catch anomalies early. Finally, we’ll need to experiment with token bucket parameters—bucket size and refill rate—to tune burst tolerance. That’s an open decision to refine based on traffic patterns."
+    },
+    {
+      "speaker": "A",
+      "text": "One subtle challenge is clock skew or time drifting across gateways and Redis. The refill schedule needs a consistent time base, else token counts could get out of sync causing unfairness or inaccurate enforcement. We should rely on a synchronized time service or strictly use Redis server time within scripts for calculating time deltas rather than local gateway clocks."
+    },
+    {
+      "speaker": "B",
+      "text": "Using Redis server time for all time calculations in the Lua scripts is a smart, centralized approach. That eliminates discrepancies and race conditions due to drifts on individual gateways. We just have to be wary of potential small latency jitter but that’s negligible compared to the correctness gain."
+    },
+    {
+      "speaker": "A",
+      "text": "For operational simplicity, we will implement this design with a reusable Redis-backed rate limiting library, exposing a consistent interface to all gateways. During rollout, we can shadow-evaluate new rate limiting rules, shadowing enforcement to measure impact without blocking traffic. Once stable, we can fully enforce limits gradually."
+    },
+    {
+      "speaker": "B",
+      "text": "That’s a good migration strategy minimizing risk. Also, versioning rate limit configurations in Redis or via a centralized config manager helps rollback or transition during upgrades. And we’ll include the option to temporarily escalate or reduce limits dynamically if monitoring indicates changes in traffic or attacks."
+    },
+    {
+      "speaker": "A",
+      "text": "We also need to consider unauthenticated clients that might not have stable user IDs. Perhaps a different, coarser shared limit keyed on IP with separate burst controls for unauthenticated traffic. That’s a scope extension but important to prevent DoS."
+    },
+    {
+      "speaker": "B",
+      "text": "Yes, we can apply separate rate limit descriptors for authenticated vs. unauthenticated clients with differing thresholds and algorithm parameters, balancing fairness and blocking abuse with minimal false positives. Transparency in APIs and logging will help identify and tune these rules over time."
+    },
+    {
+      "speaker": "A",
+      "text": "In conclusion, the token bucket algorithm combined with Redis atomic scripts and a hierarchical limiting approach addresses our main requirements well. Remaining uncertainties about specific parameter tuning and latency thresholds require empirical benchmarking and load testing once the prototype is implemented."
+    },
+    {
+      "speaker": "B",
+      "text": "Couldn't agree more. We have a solid design foundation that balances burst tolerance, fairness, accuracy, latency, and operational simplicity, with thoughtful failure and observability considerations. Our next step is to prototype the Redis Lua scripts implementing atomic token bucket logic and validate the latency impact under simulated multi-gateway load."
+    }
+  ],
+  "approved_script_hash": "6850fb95332f1880fb20436923dd5326c01bcb3b678cdf86a01920f4472530ba",
+  "rendered_script_hash": "6850fb95332f1880fb20436923dd5326c01bcb3b678cdf86a01920f4472530ba",
+  "audio_url": "https://pub-47b19fee7291446c9f2c625d7fd110b4.r2.dev/episodes/rate-limit-algorithms/7e3a604fae5570f37b60.mp3",
+  "audio_sha256": "7e3a604fae5570f37b60743a09c599a61784ca3475dda1ec6d549d2058ad2d45",
+  "duration_seconds": 522.89,
+  "audio_bytes": 8367585,
+  "storage_key": "episodes/rate-limit-algorithms/7e3a604fae5570f37b60.mp3",
+  "published_at": "2026-11-20T19:47:06+00:00"
+}
