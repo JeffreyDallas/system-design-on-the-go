@@ -62,7 +62,7 @@ Contributors only need to submit an issue with:
 | 4. Approve | Maintainer adds `episode/production-approved` and merges the PR | The reviewed episode is added to `main`. |
 | 5. Produce | Merge triggers `produce-approved-episode.yml` | Cached TTS is rendered, audio is uploaded to R2, Pages/RSS are rebuilt, and publication metadata is committed. |
 
-The production workflow checks out `main` after merge and only processes the episode changed by that PR. Contributors cannot trigger paid production because the approval label and merge are maintainer-controlled. Configure the `podcast-production` environment with required reviewers if an additional release approval is desired.
+The production workflow checks out `main` after merge and only processes the episode changed by that PR. Contributors cannot trigger paid production because the approval label and merge are maintainer-controlled. Configure the `workflow` environment with required reviewers if an additional release approval is desired.
 
 ### Dry runs and configuration
 

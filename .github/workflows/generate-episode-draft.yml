@@ -28,6 +28,7 @@ jobs:
       (github.event.label.name == 'episode/accepted' &&
       github.actor == github.repository_owner)
     runs-on: ubuntu-latest
+    environment: workflow
     permissions:
       contents: write
       issues: write
