@@ -56,16 +56,30 @@ def _save(folder: Path, ep: dict) -> None:
     save_json(folder / "episode.json", ep)
 
 
-def create_episode(slug: str, problem: str | None, sources: list[str] | None) -> tuple[Path, dict, bool]:
+def create_episode(slug: str | None, problem: str | None, sources: list[str] | None) -> tuple[Path, dict, bool]:
+    if slug:
+        slug_check(slug)
+        folder = episode_dir(slug)
+        if (folder / "episode.json").exists():
+            folder, ep = _load(slug)
+            print(f"Reusing existing script: {folder / 'episode.json'}")
+            return folder, ep, False
+    if not sources:
+        raise ValueError("A new episode needs at least one --source")
+    extracted = collect_sources(sources)
+    context_usage = []
+    if problem is None or slug is None:
+        inferred_title, inferred_problem = infer_episode_context(extracted)
+        context_usage = getattr(infer_episode_context, "last_usage", [])
+        problem = problem or inferred_problem
+        slug = slug or slugify(inferred_title)
+    slug_check(slug)
     folder = episode_dir(slug)
     if (folder / "episode.json").exists():
         folder, ep = _load(slug)
         print(f"Reusing existing script: {folder / 'episode.json'}")
         return folder, ep, False
-    if not problem or not sources:
-        raise ValueError("A new episode needs --problem and at least one --source")
     folder.mkdir(parents=True, exist_ok=True)
-    extracted = collect_sources(sources)
     brief, draft = generate(problem, extracted)
     save_json(folder / "design-brief.json", brief)
     research_refs = brief.get("research", {}).get("sources", [])
@@ -84,7 +98,7 @@ def create_episode(slug: str, problem: str | None, sources: list[str] | None) ->
         "audio_url": "",
     }
     _save(folder, ep)
-    _write_run_report(folder, ep, generation=getattr(generate, "last_usage", []), stage="new")
+    _write_run_report(folder, ep, generation=context_usage + getattr(generate, "last_usage", []), stage="new")
     print(f"Script created: {folder / 'episode.json'}")
     print(f"Design brief: {folder / 'design-brief.json'}")
     return folder, ep, True
@@ -187,14 +201,9 @@ def interactive_run(*, approve: bool = False) -> None:
     print("  Episode title and engineering problem: inferred from resources")
     print(f"  Resources: {len(sources)}")
     print("  Stages: collect → design brief → dialogue → review → audio → upload → site")
-    extracted = collect_sources(sources)
-    title, problem = infer_episode_context(extracted)
-    context_usage = getattr(infer_episode_context, "last_usage", [])
-    slug = slugify(title)
-    slug_check(slug)
-    print(f"  Inferred title: {title}")
-    print(f"  Inferred slug: {slug}")
-    folder, ep, created = create_episode_from_sources(slug, problem, extracted, title, context_usage)
+    folder, ep, created = create_episode(None, None, sources)
+    print(f"  Inferred title: {ep['title']}")
+    print(f"  Inferred slug: {ep['slug']}")
     if not created:
         print("Existing episode found; resuming its current state.")
     current = script_hash(ep)
@@ -220,38 +229,6 @@ def approve_episode(folder: Path, ep: dict) -> dict:
     return approve(folder, ep)
 
 
-def create_episode_from_sources(slug: str, problem: str, sources: list[dict], title: str,
-                                context_usage: list[dict]) -> tuple[Path, dict, bool]:
-    """Create an episode from already-collected sources for interactive runs."""
-    folder = episode_dir(slug)
-    if (folder / "episode.json").exists():
-        folder, ep = _load(slug)
-        print(f"Reusing existing script: {folder / 'episode.json'}")
-        return folder, ep, False
-    folder.mkdir(parents=True, exist_ok=True)
-    brief, draft = generate(problem, sources)
-    research_refs = brief.get("research", {}).get("sources", [])
-    ep = {
-        "slug": slug,
-        "transcript_format": TRANSCRIPT_FORMAT,
-        "title": title or draft["title"],
-        "description": draft["description"],
-        "problem": problem,
-        "created_at": utcnow(),
-        "references": ([{k: source[k] for k in ("id", "title", "url")} for source in sources]
-                       + research_refs),
-        "turns": draft["turns"],
-        "approved_script_hash": "",
-        "rendered_script_hash": "",
-        "audio_url": "",
-    }
-    _save(folder, ep)
-    _write_run_report(folder, ep, generation=context_usage + getattr(generate, "last_usage", []), stage="new")
-    print(f"Script created: {folder / 'episode.json'}")
-    print(f"Design brief: {folder / 'design-brief.json'}")
-    return folder, ep, True
-
-
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="sd-podcast", description="AI collaborative system design podcast workflow")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -260,8 +237,7 @@ def main(argv: list[str] | None = None) -> None:
         ("run", "Create or resume the script, then render, upload and publish"),
     ):
         p = sub.add_parser(command, help=summary, description=summary)
-        p.add_argument("--slug", required=True, help="Lowercase hyphenated episode identifier (max 70 characters)")
-        p.add_argument("--problem", help="Engineering problem to discuss (15+ characters)")
+        p.add_argument("--slug", help="Optional existing episode identifier; new episodes infer it from sources")
         p.add_argument("--source", action="append", default=[],
                        help="Local .md/.txt file or public HTTPS URL; repeat for up to 8 sources")
         if command == "run":
@@ -284,7 +260,7 @@ def main(argv: list[str] | None = None) -> None:
         elif args.command in ("interactive", "start"):
             interactive_run(approve=args.approve)
         elif args.command in ("new", "run"):
-            folder, ep, created = create_episode(args.slug, args.problem, args.source)
+            folder, ep, created = create_episode(args.slug, None, args.source)
             if args.command == "new":
                 print("Review and edit turns in episode.json, then run 'run --slug <slug> --approve'.")
                 return

@@ -79,7 +79,8 @@ def test_interactive_builder_collects_numbered_sources_and_runs_pipeline(monkeyp
     monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
     folder = tmp_path / "interactive-episode"
     folder.mkdir()
-    ep = {"slug": "interactive-episode", "turns": _dummy_script()["turns"]}
+    ep = {"slug": "interactive-episode", "title": "Interactive Episode",
+          "turns": _dummy_script()["turns"]}
     calls = []
 
     monkeypatch.setattr(cli, "collect_sources", lambda sources: [
@@ -89,8 +90,8 @@ def test_interactive_builder_collects_numbered_sources_and_runs_pipeline(monkeyp
     monkeypatch.setattr(cli, "infer_episode_context", lambda sources: (
         calls.append(("infer", sources)) or ("Interactive Episode", "Design a resilient event ingestion service")
     ))
-    monkeypatch.setattr(cli, "create_episode_from_sources", lambda slug, problem, sources, title, context_usage: (
-        calls.append((slug, problem, sources, title)) or (folder, ep, True)
+    monkeypatch.setattr(cli, "create_episode", lambda slug, problem, sources: (
+        calls.append((slug, problem, sources)) or (folder, ep, True)
     ))
     monkeypatch.setattr(cli, "approve_episode", lambda folder, episode: calls.append("approve") or episode)
     monkeypatch.setattr(cli, "render", lambda folder, episode: calls.append("render") or episode)
@@ -100,13 +101,6 @@ def test_interactive_builder_collects_numbered_sources_and_runs_pipeline(monkeyp
     cli.interactive_run()
 
     assert calls == [
-        ("infer", [
-            {"id": "S1", "title": "One", "url": "https://example.com/one", "text": "source one"},
-            {"id": "S2", "title": "Two", "url": "", "text": "source two"},
-        ]),
-        ("interactive-episode", "Design a resilient event ingestion service", [
-            {"id": "S1", "title": "One", "url": "https://example.com/one", "text": "source one"},
-            {"id": "S2", "title": "Two", "url": "", "text": "source two"},
-        ], "Interactive Episode"),
+        (None, None, ["https://example.com/one", "notes.md"]),
         "approve", "render", "upload", "publish",
     ]

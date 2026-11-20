@@ -57,13 +57,11 @@ python -m http.server 8000 --directory docs
 
 ```bash
 sd-podcast run \
-  --slug distributed-rate-limiter \
-  --problem 'Design a distributed API rate limiter for 100,000 requests/second across regions, balancing strict customer quotas, latency, resilience and cost' \
   --source 'https://redis.io/docs/latest/develop/use/patterns/' \
   --source 'examples/rate-limiter-notes.md'
 ```
 
-**This first invocation stops** after generating `episodes/distributed-rate-limiter/design-brief.json` and `episode.json`. Open and edit the canonical `episode.json` if needed; check that both engineers contribute, no source facts are invented, and technical trade-offs hold up. Then:
+The sources determine the episode title, engineering problem, and safe slug automatically. **This first invocation stops** after generating the design brief and `episode.json`. Open and edit the canonical `episode.json` if needed; check that both engineers contribute, no source facts are invented, and technical trade-offs hold up. The generated slug is printed by the command. Then:
 
 ```bash
 sd-podcast run --slug distributed-rate-limiter --approve
@@ -72,7 +70,7 @@ sd-podcast run --slug distributed-rate-limiter --approve
 That second command renders voice audio, uploads it to R2, records the public MP3 URL and rebuilds the Pages website. `--approve` is an explicit skip/confirmation of the review checkpoint. For an unattended one-command run, include `--approve` in the *first* command. You can also run the stages independently:
 
 ```bash
-sd-podcast new        --slug ... --problem '...' --source '...'
+sd-podcast new        --source '...'
 sd-podcast render     --slug ...
 sd-podcast upload     --slug ...
 sd-podcast publish    --slug ...
@@ -96,9 +94,6 @@ from podcast_pipeline.cli import main
 
 main([
     "run",
-    "--slug", "load-balancing",
-    "--problem",
-    "Design a production load balancer that routes traffic across healthy backends while balancing latency, fairness, failover, and operational simplicity.",
     "--source", "https://samwho.dev/load-balancing/",
     "--approve",
 ])
@@ -166,7 +161,7 @@ GitHub Pages has usage limits. **Do not commit the large MP3s:** the source repo
 
 ## Optional unattended GitHub agent
 
-`.github/workflows/publish-episode.yml` enables manual **Actions → Generate and publish a new podcast episode → Run workflow**. Supply `slug`, `problem`, and URLs (newline-separated). It performs all four stages with `--approve` and commits the new episode and Pages output. Its first run **will incur AI charges**, so consider required reviewers on the `podcast-production` environment.
+`.github/workflows/publish-episode.yml` enables manual **Actions → Generate and publish a new podcast episode → Run workflow**. Supply URLs (newline-separated); the episode title, engineering problem, and slug are inferred from those sources. It performs all four stages with `--approve` and commits the new episode and Pages output. Its first run **will incur AI charges**, so consider required reviewers on the `podcast-production` environment.
 
 Set environment/repository **secrets**: `OPENAI_API_KEY`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_A`, `ELEVENLABS_VOICE_B`, `GOOGLE_CLOUD_AUDIO_API_KEY`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`. Set **variables**: `TTS_PROVIDER` (`elevenlabs` by default, or `google`), `R2_BUCKET`, `R2_PUBLIC_BASE_URL`, and optional `SCRIPT_MODEL`, `ELEVENLABS_MODEL`, `GOOGLE_TTS_LANGUAGE_CODE`, `GOOGLE_VOICE_A`, and `GOOGLE_VOICE_B`. Actions workflow needs permission to push commits; check repo `Workflow permissions` and branch protection (protected branches may require a PR or bot exception).
 

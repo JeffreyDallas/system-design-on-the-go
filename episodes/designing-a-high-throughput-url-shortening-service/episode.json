@@ -1,0 +1,85 @@
+{
+  "slug": "designing-a-high-throughput-url-shortening-service",
+  "transcript_format": "conversation-v1",
+  "title": "Designing a High-Throughput URL Shortening Service",
+  "description": "Two engineers discuss designing a URL shortener meeting high scalability, availability, and performance requirements. They evaluate hashing versus base62 unique ID approaches, storage and caching strategies, failure modes, and security aspects, converging on distributed ID generation and caching for fast redirects.",
+  "problem": "Design a URL shortening system that generates as-short-as-possible aliases from original URLs using alphanumeric characters, supporting 100 million new URLs daily with a 10:1 read/write ratio, ensuring high availability and scalability.",
+  "created_at": "2026-11-20T21:14:10+00:00",
+  "references": [
+    {
+      "id": "S1",
+      "title": "ByteByteGo | Technical Interview Prep",
+      "url": "https://bytebytego.com/courses/system-design-interview/design-a-url-shortener"
+    }
+  ],
+  "turns": [
+    {
+      "speaker": "A",
+      "text": "Let's start by clearly defining the core requirements. We need to generate as-short-as-possible URLs using alphanumeric characters, roughly seven characters long. Each day, we're expecting creation of about 100 million new URLs, which translates roughly to around 1,160 writes per second, with about ten times that in reads, so roughly 11,600 reads per second. The system should remain highly available and scalable to handle that workload and store at least 365 billion URLs over 10 years. URL mappings are immutable — no updates or deletes — and we want fast, low-latency redirects using something like a 301 status for client caching. Also, security-wise, the generated short URLs shouldn't be easily guessable or predictable to prevent abuse."
+    },
+    {
+      "speaker": "B",
+      "text": "Agreed. We definitely need to be explicit about how we generate those short URLs. We have two main approaches to consider: one is hashing the long URL with collision resolution, and the other is base62 encoding of a globally unique ID. Each has pros and cons. Hashing can produce fixed-length strings and be deterministic for the same original URL, but collision handling complicates things and can hurt performance. On the other hand, base62 conversion of unique IDs guarantees no collisions and is simpler to scale, but risks predictability of IDs since they often grow sequentially."
+    },
+    {
+      "speaker": "A",
+      "text": "Right. Because the read-to-write ratio is 10 to 1, the redirect path is critical for performance. If we choose hashing, collision resolution might require multiple database lookups or bloom filter checks, potentially increasing latency. The base62 approach, paired with a distributed unique ID generator, provides a direct mapping from the short URL back to a unique numeric ID, which you can query directly. That seems more straightforward and aligns well with a consistent key-value lookup on the backend."
+    },
+    {
+      "speaker": "B",
+      "text": "Agreed. Also, the base62 with distributed ID generation fits nicely with horizontal scaling. If we pick a Snowflake-style ID generator, which combines timestamp, datacenter, worker ID, and sequence number, we get globally unique IDs with minimal coordination. The IDs increment roughly over time but not strictly sequentially by one, which slightly reduces predictability compared to simple counters. Then base62 encoding the numeric ID yields compact short URLs of fixed length — seven characters cover 365 billion entries, which meets our needs."
+    },
+    {
+      "speaker": "A",
+      "text": "Yes, let's talk about the database. We must support billions of records and high throughput. A relational database might not scale easily to this size without sharding or partitioning. NoSQL stores like Apache Cassandra offer linear scaling with multiple primary nodes and multi-datacenter replication. Cassandra's write-optimized design fits well with high write rates and massive scale. Still, relational databases guarantee strong consistency and unique constraints, helping avoid duplicates. But with an authoritative distributed ID generator, duplicates should be rare or nonexistent."
+    },
+    {
+      "speaker": "B",
+      "text": "I think the storage choice hinges on consistency needs. Since URLs are immutable, we don't need complex transactions, and eventual consistency is acceptable for reads. So Cassandra or a similar distributed NoSQL approach works well. Sharding or partitioning can be based on URL ID ranges or hashing the ID to evenly distribute data and load. For reads, caching is crucial — a Redis layer in front to serve most redirects fast. Given read-to-write ratio is 10:1, this mixed caching pattern helps reduce DB pressure significantly. Redis supports low-latency lookups and client-side caching patterns that can keep hot URLs warm and minimize misses."
+    },
+    {
+      "speaker": "A",
+      "text": "Exactly. We should use a cache aside policy in Redis with prefetching for popular URLs. 301 redirects also help browsers cache, reducing repeated server hits. Cache invalidation is simplified since URLs are immutable, so once cached there's no risk of stale data. We can apply TTLs primarily for memory management rather than consistency. On the API side, the POST /shorten endpoint handles URL creation with rate limiting enforced per IP or account to prevent abuse. The GET /{shortURL} endpoint handles fast redirect lookups."
+    },
+    {
+      "speaker": "B",
+      "text": "Speaking of rate limiting, it’s important to prevent denial-of-service from write floods, especially at 1,160 writes per second sustained. We can deploy distributed rate limiters keyed by client tokens or IPs, with throttling and backoff responses. Since the redirect endpoint is read-heavy, it needs to be robust against sudden traffic spikes, so horizontally scaling web servers and caching will help avoid bottlenecks. Also, the stateless web tier supports autoscaling and fault tolerance."
+    },
+    {
+      "speaker": "A",
+      "text": "Regarding collision or duplicate prevention, our ID-based system minimizes it, but we must still implement database uniqueness constraints on short URL keys. Upon insert failure due to collision — maybe due to ID generator misbehavior — a retry with a fresh ID can be attempted. Over time, we can monitor duplicate incidence rates via our logs and alerting systems. To ensure durability, regular backups and disaster recovery plans are critical given the immensity of stored data."
+    },
+    {
+      "speaker": "B",
+      "text": "Right, backup for hundreds of billions of records is challenging. Incremental backups, multi-region replication, and offline snapshots are mandatory to recover from data corruption or loss. Another point is the short URL's security: base62 encoding direct IDs exposes order and makes URLs guessable in theory. We could consider salting the IDs before encoding or applying a non-predictable mapping layer, but that increases complexity or URL length. Do we want to accept some predictability, given the scale and rate limiting, or add obfuscation?"
+    },
+    {
+      "speaker": "A",
+      "text": "Good question. Obfuscation can be done with reversible transformations like XOR with a secret key before encoding. This means the short URLs stay fixed-length but are effectively randomized, making enumeration attacks harder. The downside is added software complexity and the need to keep the salt key healthy and secure. If we employ rate limiting and abuse detection properly, the risk of guessing valid URLs might be manageable, but obfuscation would be a good defense-in-depth strategy."
+    },
+    {
+      "speaker": "B",
+      "text": "Yes, I recommend building modular support for such obfuscation so we can tune that aspect later if needed. Now about redirects: 301 is better for caching downstream browsers and CDNs, reducing load, but it makes analytics a bit harder since clients cache permanently. 302 would give more accurate counts but increases server hits. Since minimizing server load is a priority, I think 301 is preferable."
+    },
+    {
+      "speaker": "A",
+      "text": "I concur. We can differentiate where needed by adding query parameters or separate endpoints for analytics purposes, but the default redirect should be 301. Lastly, monitoring and observability: we should track API latency, cache hit rates, ID generator health, database replication lag, error rates, and unusual traffic patterns. Doing so lets us detect failures, scaling bottlenecks, or abuse attempts early."
+    },
+    {
+      "speaker": "B",
+      "text": "Definitely. Summarizing, our first design proposal is: a distributed Snowflake-style unique ID generator, base62-encoded to fixed-length short URLs; storage in a distributed NoSQL database like Cassandra with sharding and multi-region replication; Redis cache layer fronting the database for fast reads; REST API endpoints for shortening with rate limiting and for redirecting with 301 status; optional obfuscation layer on IDs; and extensive monitoring and backup strategies. What do you think?"
+    },
+    {
+      "speaker": "A",
+      "text": "That aligns well with the requirements and addresses failure modes and scalability. Our uncertainties mostly revolve around operational details like the exact database schema, ID generator fault tolerance, and rate limiting policies, which we can prototype and tune. Next steps would be evaluating specific tech stacks for ID generation and NoSQL deployment, then building a prototype for load testing."
+    }
+  ],
+  "approved_script_hash": "b20b3c1e583c3a96180296b295a148f8f4e222b3bec5e36b5b3fe4945d65bdc3",
+  "rendered_script_hash": "b20b3c1e583c3a96180296b295a148f8f4e222b3bec5e36b5b3fe4945d65bdc3",
+  "audio_url": "https://pub-47b19fee7291446c9f2c625d7fd110b4.r2.dev/episodes/designing-a-high-throughput-url-shortening-service/9dc94d9fd030da9cafad.mp3",
+  "audio_sha256": "9dc94d9fd030da9cafad29c81a8cad2ac2d998ef1c43efad0b824b5ebd04e087",
+  "duration_seconds": 527.5,
+  "audio_bytes": 8441132,
+  "storage_key": "episodes/designing-a-high-throughput-url-shortening-service/9dc94d9fd030da9cafad.mp3",
+  "published_at": "2026-11-20T21:15:28+00:00"
+}

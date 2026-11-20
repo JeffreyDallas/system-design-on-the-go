@@ -18,7 +18,7 @@ jobs:
     name: Analyze ${{ matrix.language }}
     runs-on: ubuntu-latest
     permissions:
-      actions: read
+      actions: read # Required for CodeQL to access workflow metadata.
       contents: read
       security-events: write # Required to upload CodeQL results to code scanning.
     strategy:
