@@ -97,10 +97,11 @@ def test_interactive_builder_collects_numbered_sources_and_runs_pipeline(monkeyp
     monkeypatch.setattr(cli, "render", lambda folder, episode: calls.append("render") or episode)
     monkeypatch.setattr(cli, "upload", lambda folder, episode: calls.append("upload") or episode)
     monkeypatch.setattr(cli, "publish", lambda folder, episode: calls.append("publish") or episode)
+    monkeypatch.setattr(cli, "_print_run_report", lambda folder: calls.append("report"))
 
     cli.interactive_run()
 
     assert calls == [
         (None, None, ["https://example.com/one", "notes.md"]),
-        "approve", "render", "upload", "publish",
+        "approve", "render", "upload", "publish", "report",
     ]

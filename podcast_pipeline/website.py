@@ -47,7 +47,7 @@ def episode_html(ep: dict) -> str:
     title = ep["title"]
     audio = public_link(ep.get("audio_url", ""))
     player = (f'<div class="player"><div class="eyebrow">LISTEN TO EPISODE</div>'
-              f'<audio controls preload="none" data-episode-audio aria-label="Play {h(title)}"><source src="{h(audio)}" type="audio/mpeg">Your browser does not support the audio element.</audio>'
+              f'<audio controls autoplay preload="auto" data-episode-audio aria-label="Play {h(title)}"><source src="{h(audio)}" type="audio/mpeg">Your browser does not support the audio element.</audio>'
               '<div class="audio-controls" aria-label="Playback controls">'
               '<button type="button" class="audio-button" data-seek="-15" aria-label="Rewind 15 seconds">↶ 15s</button>'
               '<button type="button" class="audio-button" data-seek="15" aria-label="Forward 15 seconds">15s ↷</button>'
@@ -85,6 +85,12 @@ def episode_html(ep: dict) -> str:
 (() => {
   const audio = document.querySelector('[data-episode-audio]');
   if (!audio) return;
+  audio.play().catch(() => {
+    const notice = document.createElement('p');
+    notice.className = 'small autoplay-notice';
+    notice.textContent = 'Autoplay was blocked by your browser. Press play to start listening.';
+    audio.insertAdjacentElement('afterend', notice);
+  });
   document.querySelectorAll('[data-seek]').forEach((button) => {
     button.addEventListener('click', () => {
       const delta = Number(button.dataset.seek);

@@ -4,6 +4,8 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import threading
+from contextlib import contextmanager
 from pathlib import Path
 
 from .sources import MAX_SOURCES, collect_sources
@@ -12,6 +14,38 @@ from .tts import render_audio
 from .util import TRANSCRIPT_FORMAT, episode_dir, read_json, save_json, script_hash, sha256, slug_check, slugify, utcnow
 from .website import build_site
 from .writer import generate, infer_episode_context, validate_script
+
+
+@contextmanager
+def progress(message: str):
+    """Show a spinner in a terminal and plain progress lines in captured logs."""
+    if not sys.stdout.isatty():
+        print(f"{message} ...", flush=True)
+        try:
+            yield
+        finally:
+            print(f"{message} complete", flush=True)
+        return
+    stop = threading.Event()
+    symbols = ("|", "/", "-", "\\")
+
+    def spin() -> None:
+        index = 0
+        while not stop.is_set():
+            sys.stdout.write(f"\r{symbols[index % len(symbols)]} {message}")
+            sys.stdout.flush()
+            index += 1
+            stop.wait(0.12)
+
+    thread = threading.Thread(target=spin, daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join()
+        sys.stdout.write(f"\r✓ {message}\n")
+        sys.stdout.flush()
 
 
 def _write_run_report(folder: Path, ep: dict, *, generation=None, tts=None, stage="run") -> None:
@@ -36,7 +70,13 @@ def _write_run_report(folder: Path, ep: dict, *, generation=None, tts=None, stag
     }
     path = folder / "run-report.json"
     save_json(path, report)
-    print(f"Usage report: {path}")
+
+
+def _print_run_report(folder: Path) -> None:
+    """Print the final usage summary once per top-level command."""
+    report = read_json(folder / "run-report.json")
+    total = report.get("estimated_total_cost_usd")
+    print(f"Usage report: {folder / 'run-report.json'}")
     print(f"Estimated AI cost: {'unavailable' if total is None else f'${total:.4f}'}")
 
 
@@ -66,10 +106,12 @@ def create_episode(slug: str | None, problem: str | None, sources: list[str] | N
             return folder, ep, False
     if not sources:
         raise ValueError("A new episode needs at least one --source")
-    extracted = collect_sources(sources)
+    with progress("Collecting source resources"):
+        extracted = collect_sources(sources)
     context_usage = []
     if problem is None or slug is None:
-        inferred_title, inferred_problem = infer_episode_context(extracted)
+        with progress("Inferring title, slug, and engineering problem"):
+            inferred_title, inferred_problem = infer_episode_context(extracted)
         context_usage = getattr(infer_episode_context, "last_usage", [])
         problem = problem or inferred_problem
         slug = slug or slugify(inferred_title)
@@ -80,7 +122,8 @@ def create_episode(slug: str | None, problem: str | None, sources: list[str] | N
         print(f"Reusing existing script: {folder / 'episode.json'}")
         return folder, ep, False
     folder.mkdir(parents=True, exist_ok=True)
-    brief, draft = generate(problem, extracted)
+    with progress("Generating design brief and dialogue"):
+        brief, draft = generate(problem, extracted)
     save_json(folder / "design-brief.json", brief)
     research_refs = brief.get("research", {}).get("sources", [])
     ep = {
@@ -119,7 +162,8 @@ def render(folder: Path, ep: dict) -> dict:
         print("Audio unchanged; using cached episode.mp3")
         return ep
     print("Generating two-voice audio; each completed segment is cached ...")
-    path, seconds = render_audio(ep, folder)
+    with progress("Rendering two-voice audio"):
+        path, seconds = render_audio(ep, folder)
     ep["rendered_script_hash"] = current
     ep["audio_sha256"] = sha256(path.read_bytes())
     ep["duration_seconds"] = round(seconds, 2)
@@ -141,7 +185,8 @@ def upload(folder: Path, ep: dict) -> dict:
     if ep.get("audio_url") and digest == ep.get("audio_sha256"):
         print("Already uploaded this audio; skipping duplicate upload")
         return ep
-    result = upload_audio(path, ep["slug"])
+    with progress("Uploading audio"):
+        result = upload_audio(path, ep["slug"])
     ep.update(result)
     _save(folder, ep)
     _write_run_report(folder, ep, stage="upload")
@@ -163,7 +208,8 @@ def publish(folder: Path, ep: dict) -> dict:
     if not ep.get("published_at"):
         ep["published_at"] = utcnow()
         _save(folder, ep)
-    count, output = build_site()
+    with progress("Building the website and RSS feed"):
+        count, output = build_site()
     _write_run_report(folder, ep, stage="publish")
     print(f"Site built: {output} ({count} episodes). Commit and push to publish via GitHub Actions.")
     return ep
@@ -212,16 +258,19 @@ def interactive_run(*, approve: bool = False) -> None:
             and ep.get("rendered_script_hash") == current):
         build_site()
         print("Already published this exact script; rebuilt the website without paid stages.")
+        _print_run_report(folder)
         return
     if not approve:
         print(f"Review the generated script at {folder / 'episode.json'}.")
         if _prompt_text("Continue to paid audio and publication after review? [y/N]: ").lower() not in {"y", "yes"}:
             print("Paused at the human review checkpoint.")
+            _print_run_report(folder)
             return
     ep = approve_episode(folder, ep)
     ep = render(folder, ep)
     ep = upload(folder, ep)
     publish(folder, ep)
+    _print_run_report(folder)
 
 
 def approve_episode(folder: Path, ep: dict) -> dict:
@@ -263,6 +312,7 @@ def main(argv: list[str] | None = None) -> None:
             folder, ep, created = create_episode(args.slug, None, args.source)
             if args.command == "new":
                 print("Review and edit turns in episode.json, then run 'run --slug <slug> --approve'.")
+                _print_run_report(folder)
                 return
             if not args.approve and ep.get("approved_script_hash") != script_hash(ep):
                 parser.exit(2, "Review checkpoint: edit and review episode.json, then rerun with --approve.\n")
@@ -274,10 +324,12 @@ def main(argv: list[str] | None = None) -> None:
                 and ep.get("rendered_script_hash") == current):
                 build_site()
                 print("Already published this exact script; rebuilding website without TTS or upload")
+                _print_run_report(folder)
                 return
             ep = render(folder, ep)
             ep = upload(folder, ep)
             publish(folder, ep)
+            _print_run_report(folder)
         else:
             folder, ep = _load(args.slug)
             if args.command == "render":
@@ -286,6 +338,7 @@ def main(argv: list[str] | None = None) -> None:
                 upload(folder, ep)
             elif args.command == "publish":
                 publish(folder, ep)
+            _print_run_report(folder)
     except Exception as exc:
         detail = str(exc).strip() or "No additional details were provided."
         action = "Check the command inputs and .env configuration, then retry."

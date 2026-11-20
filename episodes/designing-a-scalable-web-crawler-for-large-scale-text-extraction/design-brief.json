@@ -1,0 +1,188 @@
+{
+  "requirements": [
+    "Start crawling from given seed URLs",
+    "Extract text data from crawled web pages for language model training",
+    "Handle HTML content only",
+    "Recrawl to keep data fresh including newly added or updated pages",
+    "Store crawled data up to 5 years",
+    "Avoid duplicate content storage",
+    "Scale to crawl approximately 1 billion pages per month (~400 pages/sec average) or handle 10 billion pages in advanced design",
+    "Enforce politeness to avoid overloading any single host (limit concurrent requests, add delays)",
+    "Fault tolerance to recover and resume after failures",
+    "Avoid infinite loops and excessive re-crawling of same content or URLs",
+    "Ability to prioritize URLs by importance (PageRank, traffic, update frequency, etc.)",
+    "Extensible to support new content types with minimal redesign",
+    "Maintain URL and content seen structures to avoid duplicate crawling and storage",
+    "Efficient storage for large volumes (petabytes scale) with hybrid memory/disk approach",
+    "Support robots.txt rules compliance",
+    "Pipeline design to separate fetching, parsing, extracting, and storage stages for scalability and failure isolation"
+  ],
+  "assumptions": [
+    "Average webpage size ~500KB (S1) or ~2MB in planning worst-case (S2)",
+    "Seed URLs provided or can be derived by domain/topic/country partitioning",
+    "Crawler will focus on HTML text only, ignoring other media types initially",
+    "Freshness achieved by prioritizing important pages and recrawling based on update history",
+    "Web is modeled as a directed graph; crawling is BFS traversal across URLs",
+    "Crawler runs distributed worker threads, each handling one host queue to enforce politeness",
+    "Failures occur mainly at fetch stage; retries use exponential backoff with max attempts before marking site offline",
+    "URLs and content deduplication done using hash structures (e.g. Bloom filters)",
+    "Large-scale crawler requires storage in PB range for 5 years storing billions of pages",
+    "Use of cloud storage (S3 or equivalent) for storing fetched HTML and extracted text blobs",
+    "Backend queues (Kafka, SQS, Redis, or similar) effectively handle URLs to crawl and retries with mechanisms for delay and dead-letter queues",
+    "Text extraction and URL extraction stages combined but can be separated if needed",
+    "Crawl-delay from robots.txt is obeyed by crawler worker threads"
+  ],
+  "alternatives": [
+    {
+      "name": "Depth-First Search (DFS) vs Breadth-First Search (BFS)",
+      "advantages": [
+        "BFS provides better coverage of diverse hosts and freshness of newly discovered URLs",
+        "BFS maintains layers of URLs for prioritization and politeness enforcement"
+      ],
+      "disadvantages": [
+        "DFS risks deep traversal into a single site leading to politeness violations and resource wastage"
+      ]
+    },
+    {
+      "name": "Single Monolithic Crawler vs Multi-Stage Pipeline Architecture",
+      "advantages": [
+        "Multi-stage pipeline isolates failures, allowing retrying only failed stages",
+        "Easier to scale each stage independently (fetching, parsing, storage)",
+        "Facilitates changes in text extraction without re-fetching HTML"
+      ],
+      "disadvantages": [
+        "More complex system with greater operational overhead",
+        "Requires state management between stages to track progress and ensure idempotence"
+      ]
+    },
+    {
+      "name": "In-memory URL frontier vs Hybrid disk/memory URL frontier",
+      "advantages": [
+        "In-memory offers faster enqueue/dequeue operations and low latency",
+        "Hybrid approach enables handling URL frontier scale of hundreds of millions without memory limits"
+      ],
+      "disadvantages": [
+        "In-memory approach not durable, risks data loss on crash",
+        "Disk approach slower but durable, requires careful buffering to avoid bottlenecks"
+      ]
+    },
+    {
+      "name": "Use of Kafka vs AWS SQS for URL queue",
+      "advantages": [
+        "Kafka keeps immutable logs with consumer offset for precise progress tracking and fault tolerance",
+        "SQS provides message visibility timeout and redrive policy supporting exponential backoff and dead letter queues out of the box"
+      ],
+      "disadvantages": [
+        "Kafka requires custom implementation for retries/backoff logic",
+        "SQS may have higher latency and depends on cloud provider"
+      ]
+    }
+  ],
+  "failure_modes": [
+    "Crawler stalls on unresponsive or slow hosts",
+    "Infinite loops due to repeated URLs without effective URL seen checks",
+    "Overloading web servers if politeness delays are not enforced",
+    "Disk bottlenecks in URL frontier if buffering is insufficient or scanning too frequent",
+    "Loss of crawl progress on node failure if queue/storage state is not correctly maintained",
+    "Duplicate content storage increases storage cost without content seen checks",
+    "Incorrect priority assignment causing important pages to be crawled late or infrequently",
+    "Changes in page format breaking text extraction process without decoupling extraction stage",
+    "Crawler ignoring robots.txt policies causing legal/compliance issues"
+  ],
+  "evidence": [
+    {
+      "source_id": "S1",
+      "claim": "Estimated 1 billion pages per month equals ~400 QPS, requiring ~500 TB per month storage and ~30 PB for 5 years"
+    },
+    {
+      "source_id": "S1",
+      "claim": "Web crawler components include URL frontier, HTML downloader, DNS resolver, content parser, content seen filter, URL extractor, URL filter, URL seen filter, and URL storage"
+    },
+    {
+      "source_id": "S1",
+      "claim": "URL frontier must enforce politeness by mapping hosts to separate FIFO queues and worker threads, downloading one page at a time per host with delay"
+    },
+    {
+      "source_id": "S1",
+      "claim": "Prioritization of URLs in frontier improves crawling of important/recent/updated pages"
+    },
+    {
+      "source_id": "S1",
+      "claim": "Content duplication is detected by hashing web page content to prevent storing duplicate data"
+    },
+    {
+      "source_id": "S1",
+      "claim": "BFS traversal is preferred over DFS to avoid deep traversal of single hosts and improves breadth coverage"
+    },
+    {
+      "source_id": "S1",
+      "claim": "Robustness requires handling malformed pages, unresponsive servers, malicious links and system crashes"
+    },
+    {
+      "source_id": "S2",
+      "claim": "Multi-stage pipeline separates URL fetching and text+URL extraction stages to improve fault tolerance and scalability"
+    },
+    {
+      "source_id": "S2",
+      "claim": "Queues such as Kafka or SQS hold URLs, message visibility timeout supports retry with exponential backoff; dead-letter queues handle unrecoverable failures"
+    },
+    {
+      "source_id": "S2",
+      "claim": "Text extraction stage can be updated independently without re-fetching HTML"
+    },
+    {
+      "source_id": "S2",
+      "claim": "Crawler should obey robots.txt rules and crawl-delay directives to enforce politeness and compliance"
+    },
+    {
+      "source_id": "S2",
+      "claim": "Storage of raw HTML and extracted text use cloud blob storage like S3 for scalability and durability"
+    }
+  ],
+  "uncertainties": [
+    "Exact method for seed URL selection and coverage trade-offs between geographic vs topical vs popularity partitioning",
+    "Precise thresholds for politeness delays and concurrency per host under heavy scale",
+    "Optimal data structures for URL frontier and content seen for huge scale (Bloom filters vs hash sets) given false positive costs",
+    "Detailed prioritization scoring methodologies for URLs (PageRank, traffic, update frequency) and how to get/compute these scores at scale",
+    "Handling dynamic web content (JavaScript generated) and paginated or session-based URLs not covered",
+    "Cost model estimates for infrastructure at scale including bandwidth, storage, and running thousands of crawler workers",
+    "Failure modes and recovery semantics for transient network errors vs permanent host unavailability",
+    "Trade-offs in extracting and storing text only vs storing HTML plus text vs extracting metadata for better filtering",
+    "Unverified research claim (source not retained): A scalable frontier should separate prioritization from politeness; academic crawling guidance describes front queues for priority and back queues for host politeness, and advises ranking by page qual",
+    "Unverified research claim (source not retained): Freshness should be driven by historical change rate and page importance rather than uniform recrawling; classic crawling research treats both as inputs to recrawl scheduling.",
+    "Unverified research claim (source not retained): Near-duplicate detection at crawl scale is commonly implemented with digest-based grouping, with one canonical page retained and duplicates marked accordingly; Nutch documentation describes this appro",
+    "Unverified research claim (source not retained): A Bloom filter is a standard approximate membership structure used for large-scale duplicate prefiltering, with low memory overhead relative to exact sets.",
+    "Unverified research claim (source not retained): For JavaScript-rendered pages, headless browser tooling can execute page JavaScript and evaluate DOM state, which makes it suitable as a selective rendering tier for dynamic content.",
+    "Unverified research claim (source not retained): Amazon SQS visibility timeout hides a received message from other consumers until processing succeeds or the timeout expires, and failures can be routed to a dead-letter queue.",
+    "Unverified research claim (source not retained): RFC 9309 specifies the robots exclusion protocol that crawlers are requested to honor, and notes robots.txt is not a security mechanism.",
+    "Unverified research claim (source not retained): Google’s robots.txt documentation states that Google supports only certain fields and that unsupported directives such as crawl-delay are not supported by Googlebot.",
+    "Unverified research claim (source not retained): Google’s robots.txt guidance says robots.txt can be used to manage crawling traffic, but is not a way to hide content securely; site owners should use authentication or noindex for other goals.",
+    "Unverified research claim (source not retained): OpenAI’s crawler documentation says it honors crawler controls and robots.txt-based publisher preferences, showing that compliance signals are part of the current crawler ecosystem."
+  ],
+  "source_assessment": {
+    "sufficient": false,
+    "gaps": [
+      "No detailed strategy for seed URL selection with coverage metrics",
+      "Lack of operational cost and infrastructure sizing for 10B pages scale",
+      "Insufficient detail on prioritization algorithm implementations and update frequency",
+      "No description of how to handle JavaScript or dynamic content pages",
+      "Limited analysis of crawler security or abuse resistance",
+      "No discussion of legal or privacy compliance regarding stored data"
+    ],
+    "research_questions": [
+      "What comprehensive strategies exist for seed URL selection to maximize coverage and refresh rate?",
+      "How to compute and update URL priority scores at scale efficiently?",
+      "What are best practices for crawl politeness delay tuning under heavy distributed load?",
+      "How to handle crawling modern dynamic websites with client-side rendering?",
+      "What is the cost breakdown for operating a PB-scale crawler cluster including storage/bandwidth?",
+      "Which data structures are best suited for URL and content deduplication at multi-billion scale?",
+      "How to implement fault tolerance to avoid duplicated crawling and data loss during node failures?",
+      "How to incorporate legal/privacy compliance into crawler design and operation?"
+    ]
+  },
+  "research": {
+    "research_summary": "A technically credible crawler for LLM training should use a frontier that separates prioritization from politeness, because classic FIFO/BFS alone causes host bursts and ignores page importance. The strongest academic guidance is to score URLs using a combination of page quality/importance and historical change rate, then store those URLs in a frontier with front queues for priority and back queues for per-host politeness. For freshness, recrawl scheduling should be driven by observed change frequency and value/importance, rather than uniform revisits. At web scale, deduplication should use a fast approximate prefilter (e.g. Bloom filter) plus durable exact/near-duplicate handling; Nutch-style dedup groups same-content pages by digest and keeps a canonical representative. For modern sites, JavaScript rendering requires a secondary rendering path (for example a headless browser), but this should be used selectively because it is much more expensive than raw HTTP fetching. For fault tolerance, a queue with visibility timeout and dead-letter handling is a sound pattern: SQS documents that messages become visible again when not deleted before the visibility timeout, and repeated failures can be routed to a DLQ. For crawl politeness and compliance, RFC 9309 defines robots.txt as the protocol crawlers should honor, but Google’s documentation explicitly says fields such as crawl-delay are not supported by Googlebot; therefore, politeness delay should be enforced by the crawler itself, not assumed from robots.txt. For legal/privacy compliance, a production crawler should treat robots.txt as an access preference signal, not a security boundary, and also support publisher-specific crawler controls and content-policy signals where available. Official documentation from OpenAI and Google confirms robots.txt-based crawler controls are actively used in the ecosystem. The remaining major uncertainty is exact capacity/cost sizing for a PB-scale cluster, which depends heavily on fetch rate, average payload size, recrawl frequency, and whether dynamic rendering is enabled on a significant fraction of URLs.",
+    "evidence": [],
+    "sources": []
+  }
+}
