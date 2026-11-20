@@ -1,0 +1,36 @@
+name: Episode proposal
+description: Suggest a system design topic with a few credible resources.
+title: "[Episode] "
+labels:
+  - episode/proposed
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! Please suggest a topic and link to a few credible sources.
+        Do not paste full articles or private material.
+  - type: textarea
+    id: topic
+    attributes:
+      label: Topic
+      description: What system or engineering problem should the episode explore?
+      placeholder: Design a multi-region notification delivery service
+    validations:
+      required: true
+  - type: textarea
+    id: resources
+    attributes:
+      label: Resources
+      description: Add 1–5 public HTTPS links, one per line. Prefer official documentation, papers, or engineering blogs.
+      placeholder: |
+        https://example.com/design-doc
+        https://example.com/engineering-post
+    validations:
+      required: true
+  - type: textarea
+    id: focus
+    attributes:
+      label: Optional focus
+      description: Constraints, scale, failure modes, or trade-offs you would like the discussion to cover.
+    validations:
+      required: false

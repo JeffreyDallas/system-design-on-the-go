@@ -159,13 +159,27 @@ R2 Standard's published free tier is 10 GB-months storage, with request allowanc
 
 GitHub Pages has usage limits. **Do not commit the large MP3s:** the source repo has a recommended 1 GB limit and Pages a soft 100 GB/month bandwidth limit. Audio streams directly from R2.
 
-## Optional unattended GitHub agent
+## Contributor episode workflow
 
-`.github/workflows/publish-episode.yml` enables manual **Actions → Generate and publish a new podcast episode → Run workflow**. Supply URLs (newline-separated); the episode title, engineering problem, and slug are inferred from those sources. It performs all four stages with `--approve` and commits the new episode and Pages output. Its first run **will incur AI charges**, so consider required reviewers on the `podcast-production` environment.
+Contributors do not need to edit episode JSON or run Actions. They open an **Episode proposal** issue using the repository issue form and provide:
+
+- a system-design topic;
+- one to eight public HTTPS resource links; and
+- an optional focus, such as scale, failure modes, or trade-offs.
+
+Maintainers use labels as the approval gates:
+
+1. `episode/accepted` starts `.github/workflows/generate-episode-draft.yml`. The workflow validates the issue, generates the design brief and draft `episode.json`, creates a draft PR, and comments the PR link on the issue.
+2. A maintainer reviews and edits the generated PR. The script review remains the canonical approval checkpoint; both engineers should propose and challenge designs, and claims must be supported by the references.
+3. After review, the maintainer adds `episode/production-approved` and merges the PR. `.github/workflows/produce-approved-episode.yml` detects the merged approved PR, renders the cached two-voice audio, uploads it to R2, rebuilds Pages/RSS, and commits the publication metadata.
+
+The production workflow checks out `main` after merge and only processes the episode changed by that PR. Contributors cannot trigger paid production because the approval label and merge are maintainer-controlled. Configure the `podcast-production` environment with required reviewers if an additional release approval is desired.
+
+Both workflows support a safe manual dry run. In **Actions**, run either workflow with `dry_run: true` (the default). It validates the proposal or approved episode and prints the planned actions without model calls, TTS, R2 uploads, PR creation, or commits. The existing `publish-episode.yml` is retained as a maintainer-only manual fallback for an already-reviewed episode and also defaults to dry run.
 
 Set environment/repository **secrets**: `OPENAI_API_KEY`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_A`, `ELEVENLABS_VOICE_B`, `GOOGLE_CLOUD_AUDIO_API_KEY`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`. Set **variables**: `TTS_PROVIDER` (`elevenlabs` by default, or `google`), `R2_BUCKET`, `R2_PUBLIC_BASE_URL`, and optional `SCRIPT_MODEL`, `ELEVENLABS_MODEL`, `GOOGLE_TTS_LANGUAGE_CODE`, `GOOGLE_VOICE_A`, and `GOOGLE_VOICE_B`. Actions workflow needs permission to push commits; check repo `Workflow permissions` and branch protection (protected branches may require a PR or bot exception).
 
-For review-sensitive production use the local CLI instead. The workflow auto-approves without reading the generated script. Future extensions can split production into draft PR + human review + approved publish.
+For local review, use `sd-podcast new` to create a draft, inspect and edit `episodes/<slug>/episode.json`, then explicitly run `sd-podcast run --slug <slug> --approve` only after accepting the script. Unchanged approved scripts and cached TTS segments are reused to avoid duplicate cost.
 
 ## Agent Skills
 

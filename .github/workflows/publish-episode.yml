@@ -1,12 +1,17 @@
-name: Generate and publish a new podcast episode
+name: Manually produce an approved episode
 
 on:
   workflow_dispatch:
     inputs:
-      sources:
-        description: HTTPS URLs or repository-relative .md/.txt paths, one per line
+      slug:
+        description: Existing reviewed episode slug
         required: true
         type: string
+      dry_run:
+        description: Validate the episode and print the plan without paid calls or commits
+        required: false
+        default: true
+        type: boolean
 
 permissions: {}
 
@@ -30,7 +35,15 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e .
-      - name: Generate, render, upload and publish
+      - name: Dry-run plan
+        if: inputs.dry_run
+        run: |
+          set -euo pipefail
+          test -f "episodes/${{ inputs.slug }}/episode.json"
+          jq '{slug, title, approved_script_hash, audio_url}' "episodes/${{ inputs.slug }}/episode.json"
+          echo "Would render approved audio, upload it to R2, rebuild Pages/RSS, and commit metadata."
+      - name: Render, upload and publish
+        if: '!inputs.dry_run'
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SCRIPT_MODEL: ${{ vars.SCRIPT_MODEL }}
@@ -48,14 +61,10 @@ jobs:
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_PUBLIC_BASE_URL: ${{ vars.R2_PUBLIC_BASE_URL }}
-          EPISODE_SOURCES: ${{ inputs.sources }}
+          EPISODE_SLUG: ${{ inputs.slug }}
         run: |
           set -euo pipefail
-          args=(--approve)
-          while IFS= read -r source; do
-            [[ -z "$source" ]] || args+=(--source "$source")
-          done <<< "$EPISODE_SOURCES"
-          sd-podcast run "${args[@]}"
+          sd-podcast run --slug "$EPISODE_SLUG" --approve
       - name: Commit episode metadata and site
         env:
           GH_TOKEN: ${{ github.token }}

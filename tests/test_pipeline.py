@@ -6,6 +6,7 @@ import pytest
 
 from podcast_pipeline.util import MAX_SCRIPT_WORDS, env_or, script_hash, secure_https_url, slug_check
 from podcast_pipeline.sources import _split_markdown
+from podcast_pipeline.proposals import parse_proposal
 from podcast_pipeline import writer
 from podcast_pipeline.writer import validate_script
 from podcast_pipeline.website import build_site, episode_html, feed_xml, index_html
@@ -35,6 +36,31 @@ def test_public_urls_reject_credentials_and_nonstandard_ports():
     for bad in ["http://example.com", "https://example.com:8443", "https://user@example.com"]:
         with pytest.raises(ValueError):
             secure_https_url(bad)
+
+
+def test_episode_proposal_parser_extracts_and_validates_issue_form():
+    proposal = parse_proposal(
+        """### Topic
+Design a multi-region event ingestion service
+
+### Resources
+- https://example.com/design
+https://example.com/reliability
+
+### Focus
+Discuss ordering, replay, and regional failure.
+"""
+    )
+    assert proposal["topic"] == "Design a multi-region event ingestion service"
+    assert proposal["sources"] == ["https://example.com/design", "https://example.com/reliability"]
+    assert "regional failure" in proposal["problem"]
+
+
+def test_episode_proposal_parser_rejects_missing_or_unsafe_resources():
+    with pytest.raises(ValueError, match="1-8"):
+        parse_proposal("### Topic\nA topic\n### Resources\n")
+    with pytest.raises(ValueError, match="HTTPS"):
+        parse_proposal("### Topic\nA topic\n### Resources\nhttp://example.com/design")
 
 
 def test_env_or_ignores_empty_values(monkeypatch):
