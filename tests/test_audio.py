@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import shutil
 import subprocess
 
@@ -35,14 +36,29 @@ def test_tts_segment_caching_and_mp3_assembly(monkeypatch, tmp_path):
     assert file.is_file() and file.stat().st_size > 1000
     assert length > 0.20
     assert [voice for _, voice in calls] == ["voice-a", "voice-b"]
+    total = sum(len(t["text"]) for t in episode["turns"])
+    assert tts.render_audio.last_usage["characters"] == total
     tts.render_audio(episode, folder)
     assert len(calls) == 2  # no paid synth calls on rerun
+    assert tts.render_audio.last_usage["characters"] == 0
+    assert tts.render_audio.last_usage["reused_characters"] == total
 
 
 def test_duration_budget_is_hard():
     assert tts.validate_duration(20 * 60) == 20 * 60
     with pytest.raises(RuntimeError, match="maximum is 20 minutes"):
         tts.validate_duration(20 * 60 + 0.01)
+
+
+def test_provider_defaults_when_env_is_empty(monkeypatch):
+    monkeypatch.setenv("TTS_PROVIDER", "")
+    monkeypatch.setenv("ELEVENLABS_VOICE_A", "voice-a")
+    monkeypatch.setenv("ELEVENLABS_VOICE_B", "voice-b")
+    monkeypatch.setenv("ELEVENLABS_MODEL", "")
+    provider, voice_a, voice_b, synth, model = tts._provider_settings()
+    assert (provider, voice_a, voice_b) == ("elevenlabs", "voice-a", "voice-b")
+    assert model == "eleven_multilingual_v2"
+    assert synth is tts._tts_segment
 
 
 def test_local_provider_uses_free_voice_path(monkeypatch, tmp_path):
@@ -68,8 +84,6 @@ def test_google_provider_uses_two_configured_voices(monkeypatch):
 
 
 def test_google_tts_decodes_mp3_response(monkeypatch, tmp_path):
-    import base64
-
     class Response:
         def raise_for_status(self):
             return None

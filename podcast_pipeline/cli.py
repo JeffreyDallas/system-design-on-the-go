@@ -6,8 +6,12 @@ import json
 import sys
 from pathlib import Path
 
-from .util import TRANSCRIPT_FORMAT, ROOT, episode_dir, read_json, save_json, script_hash, sha256, utcnow
-from .writer import validate_script
+from .sources import collect_sources
+from .storage import upload_audio
+from .tts import render_audio
+from .util import TRANSCRIPT_FORMAT, episode_dir, read_json, save_json, script_hash, sha256, utcnow
+from .website import build_site
+from .writer import generate, validate_script
 
 
 def _write_run_report(folder: Path, ep: dict, *, generation=None, tts=None, stage="run") -> None:
@@ -56,9 +60,6 @@ def create_episode(slug: str, problem: str | None, sources: list[str] | None) ->
         return folder, ep, False
     if not problem or not sources:
         raise ValueError("A new episode needs --problem and at least one --source")
-    from .sources import collect_sources
-    from .writer import generate
-
     folder.mkdir(parents=True, exist_ok=True)
     extracted = collect_sources(sources)
     brief, draft = generate(problem, extracted)
@@ -99,7 +100,6 @@ def render(folder: Path, ep: dict) -> dict:
     if ep.get("rendered_script_hash") == current and audio_file.is_file():
         print("Audio unchanged; using cached episode.mp3")
         return ep
-    from .tts import render_audio
     print("Generating two-voice audio; each completed segment is cached ...")
     path, seconds = render_audio(ep, folder)
     ep["rendered_script_hash"] = current
@@ -122,7 +122,6 @@ def upload(folder: Path, ep: dict) -> dict:
     if ep.get("audio_url") and digest == ep.get("audio_sha256"):
         print("Already uploaded this audio; skipping duplicate upload")
         return ep
-    from .storage import upload_audio
     result = upload_audio(path, ep["slug"])
     ep.update(result)
     _save(folder, ep)
@@ -142,7 +141,6 @@ def publish(folder: Path, ep: dict) -> dict:
     if (not ep.get("audio_url") or ep.get("approved_script_hash") != current_script_hash
             or ep.get("rendered_script_hash") != current_script_hash or not audio_matches_metadata):
         raise ValueError("Published episodes require approved script and uploaded audio matching the current script")
-    from .website import build_site
     if not ep.get("published_at"):
         ep["published_at"] = utcnow()
         _save(folder, ep)
@@ -155,21 +153,28 @@ def publish(folder: Path, ep: dict) -> dict:
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="sd-podcast", description="AI collaborative system design podcast workflow")
     sub = parser.add_subparsers(dest="command", required=True)
-    for command in ("new", "run"):
-        p = sub.add_parser(command, help="Create a script, or execute the complete workflow")
-        p.add_argument("--slug", required=True)
-        p.add_argument("--problem")
-        p.add_argument("--source", action="append", default=[])
+    for command, summary in (
+        ("new", "Create a draft script and stop for review"),
+        ("run", "Create or resume the script, then render, upload and publish"),
+    ):
+        p = sub.add_parser(command, help=summary, description=summary)
+        p.add_argument("--slug", required=True, help="Lowercase hyphenated episode identifier (max 70 characters)")
+        p.add_argument("--problem", help="Engineering problem to discuss (15+ characters)")
+        p.add_argument("--source", action="append", default=[],
+                       help="Local .md/.txt file or public HTTPS URL; repeat for up to 8 sources")
         if command == "run":
             p.add_argument("--approve", action="store_true", help="Approve the current script and continue with paid TTS and upload")
-    for command in ("render", "upload", "publish"):
-        p = sub.add_parser(command)
+    for command, summary in (
+        ("render", "Synthesize the approved script into one MP3"),
+        ("upload", "Upload the rendered MP3 to Cloudflare R2"),
+        ("publish", "Rebuild the static Pages site and RSS feed"),
+    ):
+        p = sub.add_parser(command, help=summary, description=summary)
         p.add_argument("--slug", required=True)
     sub.add_parser("build-site", help="Regenerate all GitHub Pages HTML and RSS files")
     args = parser.parse_args(argv)
     try:
         if args.command == "build-site":
-            from .website import build_site
             count, path = build_site()
             print(f"Built {count} episode pages in {path}")
         elif args.command in ("new", "run"):
@@ -185,7 +190,6 @@ def main(argv: list[str] | None = None) -> None:
             if (ep.get("published_at") and ep.get("audio_url")
                 and ep.get("approved_script_hash") == current
                 and ep.get("rendered_script_hash") == current):
-                from .website import build_site
                 build_site()
                 print("Already published this exact script; rebuilding website without TTS or upload")
                 return

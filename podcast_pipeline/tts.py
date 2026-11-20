@@ -3,16 +3,14 @@ from __future__ import annotations
 
 import base64
 import json
-import os
 import shutil
 import subprocess
-import time
 from pathlib import Path
 
 import httpx
 
 from .costs import estimate_tts_cost
-from .util import MAX_EPISODE_SECONDS, ROOT, env, retry_call, sha256, script_hash
+from .util import MAX_EPISODE_SECONDS, ROOT, env, env_or, retry_call, sha256
 
 
 def _retryable_http_error(exc: Exception) -> bool:
@@ -36,7 +34,7 @@ def validate_duration(seconds: float) -> float:
 
 def _tts_segment(text: str, voice_id: str, output: Path) -> None:
     key = env("ELEVENLABS_API_KEY")
-    model = os.getenv("ELEVENLABS_MODEL", "eleven_multilingual_v2")
+    model = env_or("ELEVENLABS_MODEL", "eleven_multilingual_v2")
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
     def request():
         with httpx.Client(timeout=120) as client:
@@ -87,7 +85,7 @@ def _local_tts_segment(text: str, voice_id: str, output: Path) -> None:
 def _google_tts_segment(text: str, voice_id: str, output: Path) -> None:
     """Use Google Cloud Text-to-Speech with an API key and a named voice."""
     key = env("GOOGLE_CLOUD_AUDIO_API_KEY")
-    language_code = os.getenv("GOOGLE_TTS_LANGUAGE_CODE", "en-US").strip()
+    language_code = env_or("GOOGLE_TTS_LANGUAGE_CODE", "en-US")
     def request():
         response = httpx.post(
             "https://texttospeech.googleapis.com/v1/text:synthesize",
@@ -114,18 +112,18 @@ def _google_tts_segment(text: str, voice_id: str, output: Path) -> None:
 
 
 def _provider_settings() -> tuple[str, str, str, object, str]:
-    provider = os.getenv("TTS_PROVIDER", "elevenlabs").strip().lower()
+    provider = env_or("TTS_PROVIDER", "elevenlabs").lower()
     if provider == "local":
-        a = os.getenv("LOCAL_VOICE_A", "Samantha").strip()
-        b = os.getenv("LOCAL_VOICE_B", "Alex").strip()
+        a = env_or("LOCAL_VOICE_A", "Samantha")
+        b = env_or("LOCAL_VOICE_B", "Alex")
         return provider, a, b, _local_tts_segment, "macos-say"
     if provider == "google":
-        a = os.getenv("GOOGLE_VOICE_A", "en-US-Neural2-F").strip()
-        b = os.getenv("GOOGLE_VOICE_B", "en-US-Neural2-J").strip()
-        return provider, a, b, _google_tts_segment, os.getenv("GOOGLE_TTS_LANGUAGE_CODE", "en-US")
+        a = env_or("GOOGLE_VOICE_A", "en-US-Neural2-F")
+        b = env_or("GOOGLE_VOICE_B", "en-US-Neural2-J")
+        return provider, a, b, _google_tts_segment, env_or("GOOGLE_TTS_LANGUAGE_CODE", "en-US")
     if provider == "elevenlabs":
         a, b = env("ELEVENLABS_VOICE_A"), env("ELEVENLABS_VOICE_B")
-        return provider, a, b, _tts_segment, os.getenv("ELEVENLABS_MODEL", "eleven_multilingual_v2")
+        return provider, a, b, _tts_segment, env_or("ELEVENLABS_MODEL", "eleven_multilingual_v2")
     raise ValueError("TTS_PROVIDER must be 'elevenlabs', 'google', or 'local'")
 
 
@@ -137,15 +135,10 @@ def render_audio(episode: dict, folder: Path) -> tuple[Path, float]:
         raise ValueError("Choose distinct voice IDs for speaker A and B")
     voice_map = {"A": a, "B": b}
     characters = sum(len(turn["text"]) for turn in episode["turns"])
-    render_audio.last_usage = {
-        "provider": provider,
-        "model": model,
-        "characters": characters,
-        "estimated_cost_usd": estimate_tts_cost(provider, characters),
-    }
     cache = ROOT / ".cache" / "tts"
     cache.mkdir(parents=True, exist_ok=True)
     files = []
+    synthesized_characters = 0
     for index, turn in enumerate(episode["turns"]):
         voice = voice_map[turn["speaker"]]
         if len(turn["text"]) > 3500:
@@ -154,7 +147,15 @@ def render_audio(episode: dict, folder: Path) -> tuple[Path, float]:
         path = cache / f"{fingerprint}.mp3"
         if not path.exists() or path.stat().st_size < 1000:
             synth(turn["text"], voice, path)
+            synthesized_characters += len(turn["text"])
         files.append(path)
+    render_audio.last_usage = {
+        "provider": provider,
+        "model": model,
+        "characters": synthesized_characters,
+        "reused_characters": characters - synthesized_characters,
+        "estimated_cost_usd": estimate_tts_cost(provider, synthesized_characters),
+    }
     concat = folder / "_concat.txt"
     # All generated paths are under the project; quote for ffmpeg concat demuxer.
     concat.write_text("".join("file '" + str(f).replace("'", "'\\''") + "'\n" for f in files), encoding="utf-8")

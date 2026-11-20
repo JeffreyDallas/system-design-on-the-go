@@ -10,3 +10,4 @@ This repo contains portable Agent Skills under `.agents/skills/`. Read the skill
 - Never expose `.env`, secrets, private drafts or local generated MP3s in commits. Audio lives on Cloudflare R2.
 - API calls cost money: do not regenerate an approved unchanged episode or its TTS segments.
 - After changes, run `pytest -q` and `sd-podcast build-site`.
+- Follow strict Python style: all imports belong at the module header; do not add imports inside functions or conditional code. After every source-code change, run the relevant tests before making the next source change.

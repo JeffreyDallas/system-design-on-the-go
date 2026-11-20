@@ -1,4 +1,4 @@
-"""Extract text from trusted files or public HTTPS pages.
+"""Extract text from local files or public HTTPS pages.
 
 Not intended as a general public URL-fetching service. DNS checks are best effort;
 production multi-tenant deployment should fetch through a hardened proxy.
@@ -13,8 +13,6 @@ from urllib.parse import urljoin, urlsplit
 
 import httpx
 from bs4 import BeautifulSoup
-
-from .util import ROOT
 
 MAX_BYTES = 2_000_000
 MAX_TEXT_CHARS = 16_000

@@ -17,5 +17,7 @@ episodes/*/episode.mp3
 episodes/*/episode.tmp.mp3
 episodes/*/_concat.txt
 episodes/*/*.part
+# Per-run cost/usage report is local operational metadata, not episode content.
+episodes/*/run-report.json
 
 # Keep source-controlled episode metadata and generated Pages output.

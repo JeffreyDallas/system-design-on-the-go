@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import json
-import re
-from pathlib import Path
 
 import pytest
 
-from podcast_pipeline.util import MAX_SCRIPT_WORDS, script_hash, slug_check
+from podcast_pipeline.util import MAX_SCRIPT_WORDS, env_or, script_hash, slug_check
 from podcast_pipeline.sources import _split_markdown
 from podcast_pipeline import writer
 from podcast_pipeline.writer import validate_script
@@ -30,6 +28,13 @@ def test_slug_rejects_path_traversal():
     for bad in ["../secrets", "A", "x/y", "x--y", "", "with spaces"]:
         with pytest.raises(ValueError):
             slug_check(bad)
+
+
+def test_env_or_ignores_empty_values(monkeypatch):
+    monkeypatch.setenv("SCRIPT_MODEL", "")
+    assert env_or("SCRIPT_MODEL", "gpt-4.1-mini") == "gpt-4.1-mini"
+    monkeypatch.setenv("SCRIPT_MODEL", "  gpt-5.4-mini  ")
+    assert env_or("SCRIPT_MODEL", "gpt-4.1-mini") == "gpt-5.4-mini"
 
 
 def test_script_validation_and_hash_change():
@@ -112,6 +117,56 @@ def test_incomplete_sources_keep_only_cited_research_links(monkeypatch):
     assert research["sources"] == [{"id": "R1", "title": "Design docs",
                                      "url": "https://docs.example.com/design"}]
     assert refs == research["sources"]
+
+
+def test_research_evidence_follows_renumbered_citations(monkeypatch):
+    class Annotation:
+        def __init__(self, url, title):
+            self.type = "url_citation"
+            self.url = url
+            self.title = title
+
+    class Content:
+        def __init__(self, annotations):
+            self.annotations = annotations
+
+    class Item:
+        def __init__(self, content):
+            self.content = content
+
+    class Response:
+        output = [Item([Content([
+            Annotation("https://b.example.com/doc", "B docs"),
+            Annotation("https://a.example.com/doc", "A docs"),
+        ])])]
+
+    def fake_call(system_prompt, user_prompt, *, web_search=False):
+        return ({
+            "research_summary": "Two cited sources plus one uncited claim.",
+            "evidence": [
+                {"claim": "Claim from A.", "source_id": "R1"},
+                {"claim": "Claim from B.", "source_id": "R2"},
+                {"claim": "Claim from an uncited source.", "source_id": "R3"},
+            ],
+            "sources": [
+                {"source_id": "R1", "title": "A docs", "url": "https://a.example.com/doc"},
+                {"source_id": "R2", "title": "B docs", "url": "https://b.example.com/doc"},
+                {"source_id": "R3", "title": "Uncited", "url": "https://c.example.com/doc"},
+            ],
+        }, Response())
+
+    monkeypatch.setattr(writer, "_call_json", fake_call)
+    brief = {"source_assessment": {"sufficient": False}, "uncertainties": ["Existing uncertainty"]}
+    research, refs = writer._research_if_needed("Design a resilient service", "sources", brief)
+
+    ids = {ref["title"]: ref["id"] for ref in refs}
+    assert ids == {"B docs": "R1", "A docs": "R2"}
+    assert research["evidence"] == [
+        {"claim": "Claim from A.", "source_id": "R2"},
+        {"claim": "Claim from B.", "source_id": "R1"},
+    ]
+    assert brief["uncertainties"][0] == "Existing uncertainty"
+    assert any("Claim from an uncited source." in note for note in brief["uncertainties"])
 
 
 def test_transcript_hidden_and_escaped():

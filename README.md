@@ -4,7 +4,7 @@
 
 An open-source, agent-friendly system that turns system-design sources and engineering problems into a **two-engineer collaborative podcast**—not an interview, not a narrated article. An AI design brief drives real discussion of constraints, alternatives, operational behavior, and trade-offs. The result is a hosted MP3, a dedicated GitHub Pages episode, a **collapsed-by-default transcript**, source references and RSS.
 
-> **Status:** Working starter project with offline-tested site generation, CLI orchestration, ElevenLabs TTS and Cloudflare R2 integration. Real API calls, cloud uploads and GitHub deployment require *your own credentials* and have not been executed in this starter.
+> **Status:** Working project with offline-tested site generation, CLI orchestration, ElevenLabs/Google/local TTS and Cloudflare R2 integration. The included episodes were produced end to end with live API calls and R2 uploads; reproducing that requires *your own credentials*, and GitHub Pages deployment requires your own repository.
 
 ## How it works
 
@@ -83,7 +83,7 @@ An unchanged existing script is reused. Changed script turns must be reapproved;
 
 CLI operations report each blocking failure with an actionable next step and exit nonzero on failure. Transient speech and R2 upload errors use bounded exponential retries; rerunning a partially completed render reuses completed cached segments, and content-addressed uploads avoid duplicate media objects.
 
-Each generation/render/upload/publish step writes `episodes/<slug>/run-report.json` and prints measured model usage, TTS characters, and estimated USD cost. Token counts come from API responses; estimates use the configured/default rates and identify unpriced tool calls or providers.
+Each generation/render/upload/publish step writes a local, git-ignored `episodes/<slug>/run-report.json` and prints measured model usage, TTS characters actually synthesized (cached segments are excluded from the cost estimate), and estimated USD cost. Token counts come from API responses; estimates use the configured/default rates and mark the total unavailable when a model or provider has no rate.
 
 ## AI services and audio choices
 
@@ -91,6 +91,16 @@ Each generation/render/upload/publish step writes `episodes/<slug>/run-report.js
 - **Audio:** ElevenLabs Text-to-Speech REST API, distinct `ELEVENLABS_VOICE_A` and `ELEVENLABS_VOICE_B`, default `eleven_multilingual_v2` for stable, long-form voice consistency. Select voices from the official library and specify voice IDs in `.env`.
 - **Free local audio testing:** Set `TTS_PROVIDER=local` on macOS to use built-in `say` voices (`LOCAL_VOICE_A` and `LOCAL_VOICE_B`) and ffmpeg, with no ElevenLabs API calls. This is useful for validating the pipeline; use ElevenLabs for production voice quality.
 - **Google Cloud audio:** Set `TTS_PROVIDER=google`, provide `GOOGLE_CLOUD_AUDIO_API_KEY`, and configure distinct `GOOGLE_VOICE_A` and `GOOGLE_VOICE_B` voice names. The pipeline synthesizes each turn with the selected speaker voice and joins the resulting MP3 segments.
+
+Google Cloud setup example:
+
+```env
+TTS_PROVIDER=google
+GOOGLE_CLOUD_AUDIO_API_KEY=your-google-cloud-api-key
+GOOGLE_TTS_LANGUAGE_CODE=en-US
+GOOGLE_VOICE_A=en-US-Neural2-F
+GOOGLE_VOICE_B=en-US-Neural2-J
+```
 
 To try local audio without ElevenLabs, set these values in `.env`:
 
@@ -109,7 +119,7 @@ Check installed voice names with `say -v '?'`, then run the normal approved `ren
 ## Cloudflare R2 setup
 
 1. Create an **R2 Standard** storage bucket, e.g. `system-design-audio`.
-2. Configure public access for the *media* bucket using a Cloudflare custom domain (preferred) or a temporary `r2.dev` endpoint for development; test public HTTPS access. Consider CORS for custom player clients (native HTML audio commonly works without it).
+2. Configure public access for the *media* bucket using a Cloudflare custom domain (preferred for production traffic) or an `r2.dev` endpoint (rate-limited and intended for development; the two included episodes currently use one); test public HTTPS access. Consider CORS for custom player clients (native HTML audio commonly works without it).
 3. Create a **bucket-scoped API token** with the minimum permissions needed for uploads. Avoid admin account tokens.
 4. Put the account ID, bucket name, key/secret and public HTTPS base URL into `.env` (see `.env.example`). **Do not put these in the browser, HTML or repository.**
 5. Media is stored at `episodes/<slug>/<content-hash>.mp3`. On reruns, this key is stable for unchanged audio. Uploaded objects are public by design; do not upload private recordings.
@@ -152,6 +162,7 @@ Agents should read `AGENTS.md` then the task-specific skill, and operate the det
 
 - **Prompt injection:** Sources are untrusted. Page text is not a user or system instruction; the LLM prompt explicitly treats it as data. Local URL validation blocks non-HTTPS/private address requests on a best-effort basis. For multi-tenant Internet-facing products, use a fully isolated fetch service to prevent DNS rebinding or SSRF attacks.
 - **Code and CLI in sources:** Markdown fences and HTML code blocks are retained as non-spoken technical evidence for grounding, while the narrative source passed to dialogue generation omits them. The brief may preserve their architectural implications, but the spoken script must explain behavior in plain language without reproducing commands, flags, paths, syntax or copied snippets.
+- **Source limits:** A run accepts 1–8 sources. Each source may download up to 2 MB, then keeps at most 16,000 characters of narrative text and 8,000 characters of code/CLI artifacts; larger pages are truncated.
 - **Copyright and attribution:** Create original transformative discussions, credit sources and respect author licensing. Do not copy/publish full articles or unlicensed transcripts.
 - **Accuracy:** AI scripts require human verification; the design brief exposes assumptions and uncertainty. No automated formal fact-check guarantee.
 - **Research on gaps:** The source assessment triggers a required Responses API web-search pass when supplied material is too vague or incomplete. Cited HTTPS research links are saved in `episode.json` and rendered in the episode references; set `RESEARCH_ON_GAPS=false` only when deliberately stopping instead of filling the gaps.
@@ -178,6 +189,7 @@ podcast_pipeline/              # ingestion, LLM, TTS, storage, HTML/RSS, CLI
 episodes/<slug>/episode.json    # canonical script, references and publication state
 episodes/<slug>/design-brief.json
                                 # design brief and grounding metadata
+episodes/<slug>/run-report.json  # local cost/usage report (git-ignored)
 docs/                           # generated GitHub Pages site (no MP3s)
 examples/                       # seed source notes
 tests/                          # offline regression tests

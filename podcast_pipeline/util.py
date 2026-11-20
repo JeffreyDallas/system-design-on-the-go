@@ -55,6 +55,11 @@ def env(name: str) -> str:
     return value
 
 
+def env_or(name: str, default: str) -> str:
+    """Read a stripped environment value, falling back when it is unset or empty."""
+    return os.environ.get(name, "").strip() or default
+
+
 def secure_https_url(url: str) -> str:
     p = urlsplit(url)
     if p.scheme != "https" or not p.hostname or p.username or p.password:

@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 import json
-import os
 import re
-from urllib.parse import urlsplit
 
-from .util import MAX_SCRIPT_WORDS, env, secure_https_url
+from openai import OpenAI
+
+from .util import MAX_SCRIPT_WORDS, env, env_or, secure_https_url
 from .costs import estimate_model_cost
 
 
@@ -83,11 +83,9 @@ def _parse_json_output(raw: str) -> dict:
 
 
 def _call_json(system_prompt: str, user_prompt: str, *, web_search: bool = False):
-    from openai import OpenAI
-
     client = OpenAI(api_key=env("OPENAI_API_KEY"), timeout=120, max_retries=2)
-    model = os.getenv("RESEARCH_MODEL" if web_search else "SCRIPT_MODEL",
-                      "gpt-5.4-mini" if web_search else "gpt-4.1-mini")
+    model = env_or("RESEARCH_MODEL" if web_search else "SCRIPT_MODEL",
+                   "gpt-5.4-mini" if web_search else "gpt-4.1-mini")
     for attempt in range(2):
         kwargs = {
             "model": model,
@@ -143,7 +141,7 @@ def _research_if_needed(problem: str, source_payload: str, brief: dict) -> tuple
     assessment = brief.get("source_assessment") or {}
     if assessment.get("sufficient") is True:
         return {}, []
-    if os.getenv("RESEARCH_ON_GAPS", "true").strip().lower() in {"0", "false", "no"}:
+    if env_or("RESEARCH_ON_GAPS", "true").lower() in {"0", "false", "no"}:
         raise ValueError("Source material is incomplete; enable RESEARCH_ON_GAPS to research before generating")
     questions = assessment.get("research_questions") or [
         "What authoritative material is needed to make this design technically complete?"
@@ -155,23 +153,44 @@ def _research_if_needed(problem: str, source_payload: str, brief: dict) -> tuple
         f"\n\nORIGINAL SOURCE CONTEXT:\n{source_payload}",
         web_search=True,
     )
+    if not isinstance(research, dict):
+        research = {}
     cited = _research_annotations(response)
-    requested = research.get("sources", []) if isinstance(research, dict) else []
+    requested = research.get("sources")
     requested_by_url = {}
-    for source in requested:
+    for source in requested if isinstance(requested, list) else []:
         url = source.get("url", "") if isinstance(source, dict) else ""
         try:
             requested_by_url[secure_https_url(url)] = source
         except (ValueError, AttributeError):
             continue
     references = []
+    remap: dict[str, str] = {}
     for index, citation in enumerate(cited, start=1):
         source = requested_by_url.get(citation["url"], {})
+        reference_id = f"R{index}"
         references.append({
-            "id": f"R{index}",
+            "id": reference_id,
             "title": source.get("title") or citation["title"],
             "url": citation["url"],
         })
+        original_id = source.get("source_id")
+        if isinstance(original_id, str) and original_id:
+            remap[original_id] = reference_id
+    evidence = []
+    for item in research.get("evidence") or []:
+        if not isinstance(item, dict):
+            continue
+        retained_id = remap.get(item.get("source_id"))
+        claim = str(item.get("claim", "")).strip()
+        if retained_id:
+            evidence.append({**item, "source_id": retained_id})
+        elif claim:
+            uncertainties = brief.get("uncertainties")
+            if not isinstance(uncertainties, list):
+                uncertainties = brief["uncertainties"] = []
+            uncertainties.append(f"Unverified research claim (source not retained): {claim[:200]}")
+    research["evidence"] = evidence
     research["sources"] = references
     return research, references
 

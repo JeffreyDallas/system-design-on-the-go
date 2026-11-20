@@ -1,17 +1,16 @@
 """R2 storage is S3-compatible. Upload media only, never credentials or private drafts."""
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from urllib.parse import quote
+
+import boto3
+from botocore.config import Config
 
 from .util import env, retry_call, secure_https_url, sha256
 
 
 def upload_audio(file: Path, slug: str) -> dict:
-    import boto3
-    from botocore.config import Config
-
     base = secure_https_url(env("R2_PUBLIC_BASE_URL").rstrip("/"))
     account_id = env("R2_ACCOUNT_ID")
     bucket = env("R2_BUCKET")

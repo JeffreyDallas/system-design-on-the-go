@@ -1,9 +1,7 @@
-from pathlib import Path
-
 import pytest
 
 from podcast_pipeline import cli
-from podcast_pipeline.util import read_json, script_hash
+from podcast_pipeline.util import script_hash
 
 
 def _dummy_script():
@@ -16,14 +14,12 @@ def _dummy_script():
 def test_review_checkpoint_and_resume(monkeypatch, tmp_path):
     slug = 'cache-debate'
     monkeypatch.setattr(cli, 'episode_dir', lambda _: tmp_path / slug)
-    import podcast_pipeline.sources as source_mod
-    import podcast_pipeline.writer as writer_mod
-    monkeypatch.setattr(source_mod, 'collect_sources', lambda inputs: [{"id":"S1", "title":"Test", "url":"", "text":"Test sources"}])
+    monkeypatch.setattr(cli, 'collect_sources', lambda inputs: [{"id":"S1", "title":"Test", "url":"", "text":"Test sources"}])
     calls = {'n':0}
     def generate(problem, sources):
         calls['n'] += 1
         return {"requirements":["low latency"]}, _dummy_script()
-    monkeypatch.setattr(writer_mod, 'generate', generate)
+    monkeypatch.setattr(cli, 'generate', generate)
     folder, ep, created = cli.create_episode(slug, 'A meaningful cache design problem', ['example.md'])
     assert created
     assert ep['transcript_format'] == 'conversation-v1'
