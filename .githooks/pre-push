@@ -13,4 +13,4 @@ if [ -z "$zizmor_bin" ]; then
   exit 0
 fi
 
-exec "$zizmor_bin" --format plain .github/workflows
+exec "$zizmor_bin" --format plain .github

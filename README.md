@@ -229,7 +229,7 @@ Contributors who edit workflows can catch the same findings before pushing by en
 git config core.hooksPath .githooks
 ```
 
-The hook is skipped when `zizmor` is not installed. Run the audit manually at any time with `zizmor --format plain .github/workflows`.
+The hook is skipped when `zizmor` is not installed. Run the audit manually at any time with `zizmor --format plain .github` — zizmor checks `dependabot.yml` as well as the workflow files.
 
 Workflow inputs and event payloads must never be interpolated directly into `run:` scripts. Pass them through `env:` and quote the shell variable — zizmor fails the build on `template-injection` findings otherwise.
 
@@ -242,9 +242,11 @@ Workflow inputs and event payloads must never be interpolated directly into `run
 
 The Actions security check workflow also runs **actionlint** as a second job, which validates workflow syntax and shellchecks every `run:` block.
 
-**Dependabot** keeps dependencies current through `.github/dependabot.yml` (weekly grouped PRs for GitHub Actions and Python packages). Alerts and automated security updates must be enabled in **Settings → Code security**; they are free for private repositories, whereas CodeQL, secret scanning, dependency review and rulesets are not — those need GitHub Code Security/Secret Protection on a private repo, or a public repo.
+**Dependabot** keeps dependencies current through `.github/dependabot.yml` (weekly grouped PRs for GitHub Actions and Python packages, each with a 7-day `cooldown` so a freshly published release is not adopted before advisories surface). Alerts and automated security updates must be enabled in **Settings → Code security**; they are free for private repositories. Secret scanning, dependency review and rulesets are not free here — those need GitHub Secret Protection/Code Security on a private repo, or a public repo.
 
-Because of that, the CodeQL and Pages workflows only succeed once code scanning and Pages are enabled for this repository. Until then, pip-audit, gitleaks, zizmor and actionlint are the working security gate.
+**CodeQL** in `.github/workflows/codeql.yml` runs the Python analysis on every pull request and push to `main`, but uploads results as a workflow artifact (`codeql-sarif-python`) instead of to code scanning, which is a paid feature on private repositories. The number of findings is printed to the job summary. Once code scanning is enabled (or the repo is public), drop `upload: never` and restore `security-events: write` to get them in the Security tab and on the PR.
+
+The Pages workflow only succeeds once Pages is enabled for the repository.
 
 ## Project layout
 
