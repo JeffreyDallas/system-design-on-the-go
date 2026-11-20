@@ -6,6 +6,20 @@ An open-source, agent-friendly system that turns system-design sources and engin
 
 > **Status:** Working project with offline-tested site generation, CLI orchestration, ElevenLabs/Google/local TTS and Cloudflare R2 integration. The included episodes were produced end to end with live API calls and R2 uploads; reproducing that requires *your own credentials*, and GitHub Pages deployment requires your own repository.
 
+## Table of contents
+
+- [How it works](#how-it-works)
+- [Contributor episode workflow](#contributor-episode-workflow)
+- [Quick start](#quick-start)
+- [Create an episode, with review](#create-an-episode-with-review)
+- [AI services and audio choices](#ai-services-and-audio-choices)
+- [Cloudflare R2 setup](#cloudflare-r2-setup)
+- [GitHub Pages setup](#github-pages-setup)
+- [Agent Skills](#agent-skills)
+- [Safety, reliability and limitations](#safety-reliability-and-limitations)
+- [Tests](#tests)
+- [Project layout](#project-layout)
+
 ## How it works
 
 ```text
@@ -31,6 +45,33 @@ Source extraction → design brief (source-grounded facts, assumptions, alternat
       │
       └── RSS podcast feed /feed.xml
 ```
+
+## Contributor episode workflow
+
+Contributors only need to submit an issue with:
+
+- a system-design topic;
+- one to eight public HTTPS resource links; and
+- an optional focus, such as scale, failure modes, or trade-offs.
+
+| Step | Owner or trigger | Result |
+| --- | --- | --- |
+| 1. Propose | Contributor opens an **Episode proposal** issue | Topic and resources are captured; no repository changes are required. |
+| 2. Accept | Maintainer adds `episode/accepted` | `generate-episode-draft.yml` validates the issue, creates the design brief and draft `episode.json`, opens a draft PR, and comments the PR link on the issue. |
+| 3. Review | Maintainer reviews the draft PR | The script is checked for technical accuracy, supported claims, and meaningful contributions from both engineers. |
+| 4. Approve | Maintainer adds `episode/production-approved` and merges the PR | The reviewed episode is added to `main`. |
+| 5. Produce | Merge triggers `produce-approved-episode.yml` | Cached TTS is rendered, audio is uploaded to R2, Pages/RSS are rebuilt, and publication metadata is committed. |
+
+The production workflow checks out `main` after merge and only processes the episode changed by that PR. Contributors cannot trigger paid production because the approval label and merge are maintainer-controlled. Configure the `podcast-production` environment with required reviewers if an additional release approval is desired.
+
+### Dry runs and configuration
+
+- Run either workflow from **Actions** with `dry_run: true` (the default) to validate inputs and print the plan without model calls, TTS, R2 uploads, PR creation, or commits.
+- `publish-episode.yml` remains a maintainer-only fallback for an already-reviewed episode and also defaults to dry run.
+- Configure repository secrets for OpenAI, ElevenLabs or Google TTS, and Cloudflare R2. Configure variables for `TTS_PROVIDER`, `R2_BUCKET`, `R2_PUBLIC_BASE_URL`, and optional model/voice settings.
+- Ensure Actions can write repository contents, and configure branch protection as needed.
+
+For local review, use `sd-podcast new` to create a draft, inspect and edit `episodes/<slug>/episode.json`, then explicitly run `sd-podcast run --slug <slug> --approve` only after accepting the script. Unchanged approved scripts and cached TTS segments are reused to avoid duplicate cost.
 
 ## Quick start
 
@@ -84,22 +125,6 @@ sd-podcast interactive
 ```
 
 The command asks only for the number of source resources, then collects each URL or local `.md`/`.txt` path as a numbered input. It uses one compact, low-output model pass over the resources to infer a concise episode title, engineering problem, and safe slug before starting the design brief and dialogue stages. By default it pauses at the human review checkpoint before paid audio, upload, and publication; use `sd-podcast start` as a shorter alias, or add `--approve` only for an intentionally unattended run.
-
-### Run the complete workflow from Python
-
-The same end-to-end workflow can be invoked from Python. `--approve` opts out of the human script-review pause, so use it only for an intentionally unattended run:
-
-```python
-from podcast_pipeline.cli import main
-
-main([
-    "run",
-    "--source", "https://samwho.dev/load-balancing/",
-    "--approve",
-])
-```
-
-This performs source collection, design-brief and transcript generation, approval, two-voice rendering, R2 upload, usage reporting, and static-site publication in one resumable call. It reads credentials and provider settings from `.env`.
 
 An unchanged existing script is reused. Changed script turns must be reapproved; TTS segments are cached by voice/model/content; the final MP3 is stored locally only, outside Git. Publishing does not automatically push to GitHub, and you can stop before any paid step.
 
@@ -158,28 +183,6 @@ R2 Standard's published free tier is 10 GB-months storage, with request allowanc
 6. RSS is at `/feed.xml` and includes only episodes that have real public audio URLs. Submitting the feed to podcast directories is optional and may need additional metadata/artwork.
 
 GitHub Pages has usage limits. **Do not commit the large MP3s:** the source repo has a recommended 1 GB limit and Pages a soft 100 GB/month bandwidth limit. Audio streams directly from R2.
-
-## Contributor episode workflow
-
-Contributors do not need to edit episode JSON or run Actions. They open an **Episode proposal** issue using the repository issue form and provide:
-
-- a system-design topic;
-- one to eight public HTTPS resource links; and
-- an optional focus, such as scale, failure modes, or trade-offs.
-
-Maintainers use labels as the approval gates:
-
-1. `episode/accepted` starts `.github/workflows/generate-episode-draft.yml`. The workflow validates the issue, generates the design brief and draft `episode.json`, creates a draft PR, and comments the PR link on the issue.
-2. A maintainer reviews and edits the generated PR. The script review remains the canonical approval checkpoint; both engineers should propose and challenge designs, and claims must be supported by the references.
-3. After review, the maintainer adds `episode/production-approved` and merges the PR. `.github/workflows/produce-approved-episode.yml` detects the merged approved PR, renders the cached two-voice audio, uploads it to R2, rebuilds Pages/RSS, and commits the publication metadata.
-
-The production workflow checks out `main` after merge and only processes the episode changed by that PR. Contributors cannot trigger paid production because the approval label and merge are maintainer-controlled. Configure the `podcast-production` environment with required reviewers if an additional release approval is desired.
-
-Both workflows support a safe manual dry run. In **Actions**, run either workflow with `dry_run: true` (the default). It validates the proposal or approved episode and prints the planned actions without model calls, TTS, R2 uploads, PR creation, or commits. The existing `publish-episode.yml` is retained as a maintainer-only manual fallback for an already-reviewed episode and also defaults to dry run.
-
-Set environment/repository **secrets**: `OPENAI_API_KEY`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_A`, `ELEVENLABS_VOICE_B`, `GOOGLE_CLOUD_AUDIO_API_KEY`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`. Set **variables**: `TTS_PROVIDER` (`elevenlabs` by default, or `google`), `R2_BUCKET`, `R2_PUBLIC_BASE_URL`, and optional `SCRIPT_MODEL`, `ELEVENLABS_MODEL`, `GOOGLE_TTS_LANGUAGE_CODE`, `GOOGLE_VOICE_A`, and `GOOGLE_VOICE_B`. Actions workflow needs permission to push commits; check repo `Workflow permissions` and branch protection (protected branches may require a PR or bot exception).
-
-For local review, use `sd-podcast new` to create a draft, inspect and edit `episodes/<slug>/episode.json`, then explicitly run `sd-podcast run --slug <slug> --approve` only after accepting the script. Unchanged approved scripts and cached TTS segments are reused to avoid duplicate cost.
 
 ## Agent Skills
 

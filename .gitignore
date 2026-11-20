@@ -10,6 +10,7 @@ __pycache__/
 .venv/
 *.egg-info/
 .DS_Store
+.vscode/settings.json
 
 # Generated and paid media artifacts
 .cache/
