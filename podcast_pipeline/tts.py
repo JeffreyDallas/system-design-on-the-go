@@ -1,6 +1,7 @@
 """Dual-voice MP3 rendering with cached segments and ffmpeg assembly."""
 from __future__ import annotations
 
+import base64
 import json
 import os
 import shutil
@@ -77,16 +78,47 @@ def _local_tts_segment(text: str, voice_id: str, output: Path) -> None:
         mp3_part.unlink(missing_ok=True)
 
 
+def _google_tts_segment(text: str, voice_id: str, output: Path) -> None:
+    """Use Google Cloud Text-to-Speech with an API key and a named voice."""
+    key = env("GOOGLE_CLOUD_AUDIO_API_KEY")
+    language_code = os.getenv("GOOGLE_TTS_LANGUAGE_CODE", "en-US").strip()
+    response = httpx.post(
+        "https://texttospeech.googleapis.com/v1/text:synthesize",
+        params={"key": key},
+        json={
+            "input": {"text": text},
+            "voice": {"languageCode": language_code, "name": voice_id},
+            "audioConfig": {"audioEncoding": "MP3"},
+        },
+        timeout=120,
+    )
+    response.raise_for_status()
+    try:
+        audio = base64.b64decode(response.json()["audioContent"], validate=True)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise RuntimeError("Google TTS returned an invalid audio response") from exc
+    if not audio.startswith((b"ID3", b"\xff\xfb", b"\xff\xf3", b"\xff\xf2")):
+        raise ValueError("Google TTS returned unrecognized audio bytes")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    part = output.with_suffix(".part")
+    part.write_bytes(audio)
+    part.replace(output)
+
+
 def _provider_settings() -> tuple[str, str, str, object, str]:
     provider = os.getenv("TTS_PROVIDER", "elevenlabs").strip().lower()
     if provider == "local":
         a = os.getenv("LOCAL_VOICE_A", "Samantha").strip()
         b = os.getenv("LOCAL_VOICE_B", "Alex").strip()
         return provider, a, b, _local_tts_segment, "macos-say"
+    if provider == "google":
+        a = os.getenv("GOOGLE_VOICE_A", "en-US-Neural2-F").strip()
+        b = os.getenv("GOOGLE_VOICE_B", "en-US-Neural2-J").strip()
+        return provider, a, b, _google_tts_segment, os.getenv("GOOGLE_TTS_LANGUAGE_CODE", "en-US")
     if provider == "elevenlabs":
         a, b = env("ELEVENLABS_VOICE_A"), env("ELEVENLABS_VOICE_B")
         return provider, a, b, _tts_segment, os.getenv("ELEVENLABS_MODEL", "eleven_multilingual_v2")
-    raise ValueError("TTS_PROVIDER must be 'elevenlabs' or 'local'")
+    raise ValueError("TTS_PROVIDER must be 'elevenlabs', 'google', or 'local'")
 
 
 def render_audio(episode: dict, folder: Path) -> tuple[Path, float]:

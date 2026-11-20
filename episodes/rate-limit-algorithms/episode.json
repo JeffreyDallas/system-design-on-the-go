@@ -96,10 +96,10 @@
   ],
   "approved_script_hash": "6850fb95332f1880fb20436923dd5326c01bcb3b678cdf86a01920f4472530ba",
   "rendered_script_hash": "6850fb95332f1880fb20436923dd5326c01bcb3b678cdf86a01920f4472530ba",
-  "audio_url": "https://pub-47b19fee7291446c9f2c625d7fd110b4.r2.dev/episodes/rate-limit-algorithms/7e3a604fae5570f37b60.mp3",
-  "audio_sha256": "7e3a604fae5570f37b60743a09c599a61784ca3475dda1ec6d549d2058ad2d45",
-  "duration_seconds": 522.89,
-  "audio_bytes": 8367585,
-  "storage_key": "episodes/rate-limit-algorithms/7e3a604fae5570f37b60.mp3",
-  "published_at": "2026-11-20T19:47:06+00:00"
+  "audio_url": "https://pub-47b19fee7291446c9f2c625d7fd110b4.r2.dev/episodes/rate-limit-algorithms/4af6d4db990d1053eb33.mp3",
+  "audio_sha256": "4af6d4db990d1053eb338ccc334a0629e2761bb695189898acd869bca15dd4ba",
+  "duration_seconds": 553.03,
+  "audio_bytes": 8849708,
+  "published_at": "2026-11-20T19:47:06+00:00",
+  "storage_key": "episodes/rate-limit-algorithms/4af6d4db990d1053eb33.mp3"
 }

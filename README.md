@@ -89,6 +89,7 @@ An unchanged existing script is reused. Changed script turns must be reapproved;
 - **Dialogue:** OpenAI Responses API, `SCRIPT_MODEL` configurable (`gpt-4.1-mini` example default). Two-pass generation: design brief then conversation; all source content is untrusted input.
 - **Audio:** ElevenLabs Text-to-Speech REST API, distinct `ELEVENLABS_VOICE_A` and `ELEVENLABS_VOICE_B`, default `eleven_multilingual_v2` for stable, long-form voice consistency. Select voices from the official library and specify voice IDs in `.env`.
 - **Free local audio testing:** Set `TTS_PROVIDER=local` on macOS to use built-in `say` voices (`LOCAL_VOICE_A` and `LOCAL_VOICE_B`) and ffmpeg, with no ElevenLabs API calls. This is useful for validating the pipeline; use ElevenLabs for production voice quality.
+- **Google Cloud audio:** Set `TTS_PROVIDER=google`, provide `GOOGLE_CLOUD_AUDIO_API_KEY`, and configure distinct `GOOGLE_VOICE_A` and `GOOGLE_VOICE_B` voice names. The pipeline synthesizes each turn with the selected speaker voice and joins the resulting MP3 segments.
 
 To try local audio without ElevenLabs, set these values in `.env`:
 
