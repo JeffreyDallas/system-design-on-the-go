@@ -64,7 +64,7 @@ jobs:
         run: |
           set -euo pipefail
           mapfile -t sources < <(jq -r '.sources[]' proposal-fields.json)
-          args=(new --problem "$(jq -r .problem proposal-fields.json)")
+          args=(new)
           for source in "${sources[@]}"; do args+=(--source "$source"); done
           sd-podcast "${args[@]}" | tee generation.log
           slug=$(git status --short | sed -n 's#^?? episodes/\([^/]\+\)/.*#\1#p' | head -1)
