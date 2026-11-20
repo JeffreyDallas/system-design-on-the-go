@@ -1,0 +1,72 @@
+from pathlib import Path
+
+import pytest
+
+from podcast_pipeline import cli
+from podcast_pipeline.util import read_json, script_hash
+
+
+def _dummy_script():
+    return {
+        "title":"A Shared Cache Trade-off", "description":"Two peer engineers assess caching.",
+        "turns":[{"speaker":"A" if i%2==0 else "B", "text":"Let's examine the latency, consistency, and operational impact."} for i in range(10)]
+    }
+
+
+def test_review_checkpoint_and_resume(monkeypatch, tmp_path):
+    slug = 'cache-debate'
+    monkeypatch.setattr(cli, 'episode_dir', lambda _: tmp_path / slug)
+    import podcast_pipeline.sources as source_mod
+    import podcast_pipeline.writer as writer_mod
+    monkeypatch.setattr(source_mod, 'collect_sources', lambda inputs: [{"id":"S1", "title":"Test", "url":"", "text":"Test sources"}])
+    calls = {'n':0}
+    def generate(problem, sources):
+        calls['n'] += 1
+        return {"requirements":["low latency"]}, _dummy_script()
+    monkeypatch.setattr(writer_mod, 'generate', generate)
+    folder, ep, created = cli.create_episode(slug, 'A meaningful cache design problem', ['example.md'])
+    assert created
+    assert not ep['approved_script_hash']
+    assert calls['n'] == 1
+    _, _, created_again = cli.create_episode(slug, 'A changed prompt', ['example2.md'])
+    assert not created_again
+    assert calls['n'] == 1
+    ep = cli.approve(folder, ep)
+    assert ep['approved_script_hash'] == script_hash(ep)
+    ep['turns'][0]['text'] += ' And revise the design.'
+    with pytest.raises(ValueError, match='not approved'):
+        cli.render(folder, ep)
+    assert not (folder / 'episode.mp3').exists()
+
+
+def test_publish_requires_audio_and_approval(tmp_path):
+    folder = tmp_path / 'ep'
+    folder.mkdir()
+    ep = {'title':'Episode','description':'Desc','slug':'ep','turns':_dummy_script()['turns'],
+          'audio_url':'', 'approved_script_hash':''}
+    with pytest.raises(ValueError, match='approved script and uploaded audio'):
+        cli.publish(folder, ep)
+
+
+def test_stale_audio_cannot_be_published(tmp_path):
+    folder = tmp_path / 'ep'
+    folder.mkdir()
+    ep = {'title':'Episode','description':'Desc','slug':'ep','turns':_dummy_script()['turns'],
+          'audio_url':'https://audio.example.com/old.mp3',
+          'approved_script_hash':'old', 'rendered_script_hash':'old'}
+    ep['approved_script_hash'] = script_hash(ep)
+    with pytest.raises(ValueError, match='matching the current script'):
+        cli.publish(folder, ep)
+
+
+def test_publish_rejects_replaced_audio(tmp_path):
+    folder = tmp_path / 'ep'
+    folder.mkdir()
+    ep = {'title':'Episode','description':'Desc','slug':'ep','turns':_dummy_script()['turns'],
+          'audio_url':'https://audio.example.com/old.mp3', 'audio_sha256':'original',
+          'rendered_script_hash':'', 'approved_script_hash':''}
+    ep['approved_script_hash'] = script_hash(ep)
+    ep['rendered_script_hash'] = ep['approved_script_hash']
+    (folder / 'episode.mp3').write_bytes(b'replaced')
+    with pytest.raises(ValueError, match='matching the current script'):
+        cli.publish(folder, ep)

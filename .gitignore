@@ -1,0 +1,21 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+
+# Python and local tooling
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+*.egg-info/
+.DS_Store
+
+# Generated and paid media artifacts
+.cache/
+episodes/*/episode.mp3
+episodes/*/episode.tmp.mp3
+episodes/*/_concat.txt
+episodes/*/*.part
+
+# Keep source-controlled episode metadata and generated Pages output.
