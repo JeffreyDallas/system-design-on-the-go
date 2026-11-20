@@ -37,10 +37,13 @@ jobs:
       - run: python -m pip install -e .
       - name: Dry-run plan
         if: inputs.dry_run
+        env:
+          EPISODE_SLUG: ${{ inputs.slug }}
         run: |
           set -euo pipefail
-          test -f "episodes/${{ inputs.slug }}/episode.json"
-          jq '{slug, title, approved_script_hash, audio_url}' "episodes/${{ inputs.slug }}/episode.json"
+          [[ "$EPISODE_SLUG" =~ ^[a-z0-9-]+$ ]] || { echo "Invalid slug: $EPISODE_SLUG" >&2; exit 1; }
+          test -f "episodes/${EPISODE_SLUG}/episode.json"
+          jq '{slug, title, approved_script_hash, audio_url}' "episodes/${EPISODE_SLUG}/episode.json"
           echo "Would render approved audio, upload it to R2, rebuild Pages/RSS, and commit metadata."
       - name: Render, upload and publish
         if: '!inputs.dry_run'
@@ -64,6 +67,7 @@ jobs:
           EPISODE_SLUG: ${{ inputs.slug }}
         run: |
           set -euo pipefail
+          [[ "$EPISODE_SLUG" =~ ^[a-z0-9-]+$ ]] || { echo "Invalid slug: $EPISODE_SLUG" >&2; exit 1; }
           sd-podcast run --slug "$EPISODE_SLUG" --approve
       - name: Commit episode metadata and site
         env:

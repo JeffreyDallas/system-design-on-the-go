@@ -223,6 +223,29 @@ sd-podcast build-site
 
 `.github/workflows/zizmor.yml` audits the GitHub Actions workflows with [zizmor](https://github.com/zizmorcore/zizmor). It runs on every pull request and on any push that touches `.github/workflows/**` or `.github/actions/**`, so workflow changes anywhere are reviewed for security issues before they reach `main`. Contributors cannot trigger Actions directly; their PR is the trigger.
 
+Contributors who edit workflows can catch the same findings before pushing by enabling the optional hook (requires a local `zizmor`, e.g. `pipx install zizmor`):
+
+```bash
+git config core.hooksPath .githooks
+```
+
+The hook is skipped when `zizmor` is not installed. Run the audit manually at any time with `zizmor --format plain .github/workflows`.
+
+Workflow inputs and event payloads must never be interpolated directly into `run:` scripts. Pass them through `env:` and quote the shell variable — zizmor fails the build on `template-injection` findings otherwise.
+
+### Other free checks
+
+`.github/workflows/security.yml` adds two scans that do not need a paid GitHub plan:
+
+- **`pip-audit`** audits the installed Python environment for known advisories. It runs on pull requests, pushes to `main`, and weekly on a schedule so newly disclosed CVEs surface without a code change.
+- **`gitleaks`** scans commits for committed credentials. It runs on pull requests and pushes to `main`, and comments on the PR when it finds something. A `GITLEAKS_LICENSE` secret is only needed for organization-owned repositories.
+
+The Actions security check workflow also runs **actionlint** as a second job, which validates workflow syntax and shellchecks every `run:` block.
+
+**Dependabot** keeps dependencies current through `.github/dependabot.yml` (weekly grouped PRs for GitHub Actions and Python packages). Alerts and automated security updates must be enabled in **Settings → Code security**; they are free for private repositories, whereas CodeQL, secret scanning, dependency review and rulesets are not — those need GitHub Code Security/Secret Protection on a private repo, or a public repo.
+
+Because of that, the CodeQL and Pages workflows only succeed once code scanning and Pages are enabled for this repository. Until then, pip-audit, gitleaks, zizmor and actionlint are the working security gate.
+
 ## Project layout
 
 ```text

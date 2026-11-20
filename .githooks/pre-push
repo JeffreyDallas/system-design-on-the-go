@@ -1,0 +1,16 @@
+#!/bin/sh
+# Optional local guard: audit GitHub Actions workflows with zizmor before pushing.
+# Enable once with: git config core.hooksPath .githooks
+set -eu
+
+zizmor_bin=${ZIZMOR:-}
+if [ -z "$zizmor_bin" ]; then
+  zizmor_bin=$(command -v zizmor || true)
+fi
+
+if [ -z "$zizmor_bin" ]; then
+  echo "pre-push: zizmor not found, skipping workflow security scan." >&2
+  exit 0
+fi
+
+exec "$zizmor_bin" --format plain .github/workflows

@@ -64,13 +64,17 @@ jobs:
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_PUBLIC_BASE_URL: ${{ vars.R2_PUBLIC_BASE_URL }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
           set -euo pipefail
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            merge_sha=$(gh pr view "${{ inputs.pr_number }}" --json mergeCommit -q .mergeCommit.oid)
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            [[ "$PR_NUMBER" =~ ^[0-9]+$ ]] || { echo "Invalid PR number: $PR_NUMBER" >&2; exit 1; }
+            merge_sha=$(gh pr view "$PR_NUMBER" --json mergeCommit -q .mergeCommit.oid)
           else
-            merge_sha="${{ github.event.pull_request.merge_commit_sha }}"
+            merge_sha="$MERGE_SHA"
           fi
+          [[ "$merge_sha" =~ ^[0-9a-f]{40}$ ]] || { echo "Invalid merge commit: $merge_sha" >&2; exit 1; }
           mapfile -t slugs < <(git diff --name-only "${merge_sha}^1" "$merge_sha" \
             | sed -n 's#^episodes/\([^/]*\)/episode\.json$#\1#p' | sort -u)
           test "${#slugs[@]}" -eq 1
