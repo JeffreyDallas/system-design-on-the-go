@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from podcast_pipeline.util import MAX_SCRIPT_WORDS, env_or, script_hash, slug_check
+from podcast_pipeline.util import MAX_SCRIPT_WORDS, env_or, script_hash, secure_https_url, slug_check
 from podcast_pipeline.sources import _split_markdown
 from podcast_pipeline import writer
 from podcast_pipeline.writer import validate_script
@@ -28,6 +28,13 @@ def test_slug_rejects_path_traversal():
     for bad in ["../secrets", "A", "x/y", "x--y", "", "with spaces"]:
         with pytest.raises(ValueError):
             slug_check(bad)
+
+
+def test_public_urls_reject_credentials_and_nonstandard_ports():
+    assert secure_https_url("https://example.com/feed.xml") == "https://example.com/feed.xml"
+    for bad in ["http://example.com", "https://example.com:8443", "https://user@example.com"]:
+        with pytest.raises(ValueError):
+            secure_https_url(bad)
 
 
 def test_env_or_ignores_empty_values(monkeypatch):
@@ -227,3 +234,19 @@ def test_build_site_removes_stale_generated_episode(monkeypatch, tmp_path):
     assert count == 1
     assert not stale.exists()
     assert (tmp_path / "docs" / "episodes" / "current" / "index.html").exists()
+
+
+def test_build_site_rejects_episode_slug_directory_mismatch(monkeypatch, tmp_path):
+    monkeypatch.setattr("podcast_pipeline.website.ROOT", tmp_path)
+    folder = tmp_path / "episodes" / "safe"
+    folder.mkdir(parents=True)
+    folder.joinpath("episode.json").write_text(
+        json.dumps({**valid_episode(), "slug": "../escaped", "published_at": "2026-11-20T12:00:00+00:00"}),
+        encoding="utf-8",
+    )
+    (tmp_path / "site.json").write_text(json.dumps({
+        "name": "Demo", "site_url": "https://example.com/", "description": "Demo"
+    }), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Slug"):
+        build_site()

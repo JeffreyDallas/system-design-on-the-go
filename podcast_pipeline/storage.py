@@ -7,10 +7,11 @@ from urllib.parse import quote
 import boto3
 from botocore.config import Config
 
-from .util import env, retry_call, secure_https_url, sha256
+from .util import env, retry_call, secure_https_url, sha256, slug_check
 
 
 def upload_audio(file: Path, slug: str) -> dict:
+    slug_check(slug)
     base = secure_https_url(env("R2_PUBLIC_BASE_URL").rstrip("/"))
     account_id = env("R2_ACCOUNT_ID")
     bucket = env("R2_BUCKET")

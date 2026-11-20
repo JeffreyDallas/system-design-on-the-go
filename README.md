@@ -79,6 +79,25 @@ sd-podcast publish    --slug ...
 sd-podcast build-site
 ```
 
+### Run the complete workflow from Python
+
+The same end-to-end workflow can be invoked from Python. `--approve` opts out of the human script-review pause, so use it only for an intentionally unattended run:
+
+```python
+from podcast_pipeline.cli import main
+
+main([
+    "run",
+    "--slug", "load-balancing",
+    "--problem",
+    "Design a production load balancer that routes traffic across healthy backends while balancing latency, fairness, failover, and operational simplicity.",
+    "--source", "https://samwho.dev/load-balancing/",
+    "--approve",
+])
+```
+
+This performs source collection, design-brief and transcript generation, approval, two-voice rendering, R2 upload, usage reporting, and static-site publication in one resumable call. It reads credentials and provider settings from `.env`.
+
 An unchanged existing script is reused. Changed script turns must be reapproved; TTS segments are cached by voice/model/content; the final MP3 is stored locally only, outside Git. Publishing does not automatically push to GitHub, and you can stop before any paid step.
 
 CLI operations report each blocking failure with an actionable next step and exit nonzero on failure. Transient speech and R2 upload errors use bounded exponential retries; rerunning a partially completed render reuses completed cached segments, and content-addressed uploads avoid duplicate media objects.
@@ -141,7 +160,7 @@ GitHub Pages has usage limits. **Do not commit the large MP3s:** the source repo
 
 `.github/workflows/publish-episode.yml` enables manual **Actions → Generate and publish a new podcast episode → Run workflow**. Supply `slug`, `problem`, and URLs (newline-separated). It performs all four stages with `--approve` and commits the new episode and Pages output. Its first run **will incur AI charges**, so consider required reviewers on the `podcast-production` environment.
 
-Set environment/repository **secrets**: `OPENAI_API_KEY`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_A`, `ELEVENLABS_VOICE_B`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`. Set **variables**: `R2_BUCKET`, `R2_PUBLIC_BASE_URL`, and optional `SCRIPT_MODEL`, `ELEVENLABS_MODEL`. Actions workflow needs permission to push commits; check repo `Workflow permissions` and branch protection (protected branches may require a PR or bot exception).
+Set environment/repository **secrets**: `OPENAI_API_KEY`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_A`, `ELEVENLABS_VOICE_B`, `GOOGLE_CLOUD_AUDIO_API_KEY`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`. Set **variables**: `TTS_PROVIDER` (`elevenlabs` by default, or `google`), `R2_BUCKET`, `R2_PUBLIC_BASE_URL`, and optional `SCRIPT_MODEL`, `ELEVENLABS_MODEL`, `GOOGLE_TTS_LANGUAGE_CODE`, `GOOGLE_VOICE_A`, and `GOOGLE_VOICE_B`. Actions workflow needs permission to push commits; check repo `Workflow permissions` and branch protection (protected branches may require a PR or bot exception).
 
 For review-sensitive production use the local CLI instead. The workflow auto-approves without reading the generated script. Future extensions can split production into draft PR + human review + approved publish.
 

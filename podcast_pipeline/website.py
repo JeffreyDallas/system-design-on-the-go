@@ -6,10 +6,10 @@ from email.utils import format_datetime
 from html import escape
 from pathlib import Path
 import shutil
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urljoin
 import xml.etree.ElementTree as ET
 
-from .util import ROOT, read_json, secure_https_url
+from .util import ROOT, read_json, secure_https_url, slug_check
 
 
 def h(s) -> str:
@@ -17,8 +17,10 @@ def h(s) -> str:
 
 
 def public_link(url: str) -> str:
-    parsed = urlsplit(url)
-    return url if parsed.scheme == "https" and parsed.hostname and not parsed.username and not parsed.password else ""
+    try:
+        return secure_https_url(url)
+    except ValueError:
+        return ""
 
 
 def base_html(title: str, content: str, relative: str, meta_description: str) -> str:
@@ -144,6 +146,9 @@ def build_site() -> tuple[int,Path]:
     for filepath in sorted((ROOT / "episodes").glob("*/episode.json")):
         ep = read_json(filepath)
         if ep.get("published_at"):
+            slug = slug_check(ep.get("slug", ""))
+            if slug != filepath.parent.name:
+                raise ValueError("Episode slug does not match its directory")
             episodes.append(ep)
     episodes.sort(key=lambda ep: ep.get("published_at", ""), reverse=True)
     generated_slugs = {ep["slug"] for ep in episodes}

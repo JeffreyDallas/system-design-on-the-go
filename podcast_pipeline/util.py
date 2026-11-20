@@ -62,7 +62,8 @@ def env_or(name: str, default: str) -> str:
 
 def secure_https_url(url: str) -> str:
     p = urlsplit(url)
-    if p.scheme != "https" or not p.hostname or p.username or p.password:
+    if (p.scheme != "https" or not p.hostname or p.username or p.password
+            or p.port not in (None, 443)):
         raise ValueError("Public URLs must be HTTPS without credentials")
     return url
 

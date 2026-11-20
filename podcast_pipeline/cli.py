@@ -9,7 +9,7 @@ from pathlib import Path
 from .sources import collect_sources
 from .storage import upload_audio
 from .tts import render_audio
-from .util import TRANSCRIPT_FORMAT, episode_dir, read_json, save_json, script_hash, sha256, utcnow
+from .util import TRANSCRIPT_FORMAT, episode_dir, read_json, save_json, script_hash, sha256, slug_check, utcnow
 from .website import build_site
 from .writer import generate, validate_script
 
@@ -41,11 +41,15 @@ def _write_run_report(folder: Path, ep: dict, *, generation=None, tts=None, stag
 
 
 def _load(slug: str) -> tuple[Path, dict]:
+    slug_check(slug)
     folder = episode_dir(slug)
     path = folder / "episode.json"
     if not path.exists():
         raise FileNotFoundError(f"No episode at {path}. Run 'new' first")
-    return folder, validate_script(read_json(path))
+    episode = validate_script(read_json(path))
+    if episode.get("slug") != slug:
+        raise ValueError("Episode slug does not match its directory")
+    return folder, episode
 
 
 def _save(folder: Path, ep: dict) -> None:
@@ -115,6 +119,7 @@ def render(folder: Path, ep: dict) -> dict:
 
 
 def upload(folder: Path, ep: dict) -> dict:
+    slug_check(ep.get("slug", ""))
     path = folder / "episode.mp3"
     if not path.is_file() or ep.get("rendered_script_hash") != script_hash(ep):
         raise ValueError("Render the current approved script before uploading")
