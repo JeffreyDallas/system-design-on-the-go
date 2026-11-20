@@ -46,15 +46,12 @@ cp .env.example .env
 
 The template is the hidden root file [.env.example](.env.example); use `ls -la` or enable hidden files in your editor if it is not visible.
 
-Preview the site **without any AI credentials or API cost**:
+Preview the generated site locally:
 
 ```bash
-sd-podcast demo
 python -m http.server 8000 --directory docs
 # Open http://localhost:8000/
 ```
-
-The demo has a realistic eight-turn sample transcript and **no audio**; it deliberately says audio is not published. No live audio is included in the starter package.
 
 ## Create an episode, with review
 
@@ -83,6 +80,8 @@ sd-podcast build-site
 ```
 
 An unchanged existing script is reused. Changed script turns must be reapproved; TTS segments are cached by voice/model/content; the final MP3 is stored locally only, outside Git. Publishing does not automatically push to GitHub, and you can stop before any paid step.
+
+CLI operations report each blocking failure with an actionable next step and exit nonzero on failure. Transient speech and R2 upload errors use bounded exponential retries; rerunning a partially completed render reuses completed cached segments, and content-addressed uploads avoid duplicate media objects.
 
 ## AI services and audio choices
 
@@ -165,7 +164,6 @@ Agents should read `AGENTS.md` then the task-specific skill, and operate the det
 
 ```bash
 pytest -q
-sd-podcast demo
 sd-podcast build-site
 ```
 

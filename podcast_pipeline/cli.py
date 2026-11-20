@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+import sys
 from pathlib import Path
 
 from .util import TRANSCRIPT_FORMAT, ROOT, episode_dir, read_json, save_json, script_hash, sha256, utcnow
@@ -120,34 +122,6 @@ def publish(folder: Path, ep: dict) -> dict:
     return ep
 
 
-def demo() -> None:
-    folder = episode_dir("demo-distributed-rate-limiter")
-    if not (folder / "episode.json").exists():
-        ep = {
-            "slug": "demo-distributed-rate-limiter",
-            "transcript_format": TRANSCRIPT_FORMAT,
-            "title": "Designing a Distributed Rate Limiter",
-            "description": "Two colleagues compare a shared Redis counter with locally enforced token buckets, from consistency to failure recovery.",
-            "problem": "Protect an API with a distributed rate limiter while keeping latency low and avoiding a shared-service outage taking down requests.",
-            "created_at": utcnow(), "published_at": utcnow(), "references": [], "audio_url": "",
-            "turns": [
-                {"speaker":"A","text":"We need rate limits across multiple gateways. A per-process counter won't work if traffic lands on different instances, so my first thought is a shared store like Redis."},
-                {"speaker":"B","text":"A shared counter simplifies enforcement, but now every request may depend on Redis latency and availability. Before we commit, how strict do our limits need to be?"},
-                {"speaker":"A","text":"Let's say paid accounts require reasonably strict limits while anonymous traffic may tolerate small bursts. We should make that an explicit assumption, not present it as a known requirement."},
-                {"speaker":"B","text":"Then we could try local token buckets for anonymous clients and a centralized counter for paid accounts. But consistency and failure handling still need careful testing."},
-                {"speaker":"A","text":"For strict limits, an atomic Redis operation could update state and TTL together. It also gives us a place to collect rejects and saturation metrics."},
-                {"speaker":"B","text":"And we need to ask what happens when Redis is unavailable. Do we fail open and risk overload, or fail closed and block paying customers? I'd prefer an explicit per-endpoint policy."},
-                {"speaker":"A","text":"Agreed. Let's also test burst traffic, uneven gateway load and hot customer keys. That will tell us whether a single shard is adequate."},
-                {"speaker":"B","text":"Our next step is a prototype and load test, not a premature final architecture. We can compare latency budgets, operational burden and the observed error rate."}
-            ]
-        }
-        folder.mkdir(parents=True, exist_ok=True)
-        _save(folder, ep)
-    from .website import build_site
-    count, out = build_site()
-    print(f"Demo site created at {out / 'index.html'} ({count} episode previews). No paid APIs called.")
-
-
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="sd-podcast", description="AI collaborative system design podcast workflow")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -162,12 +136,9 @@ def main(argv: list[str] | None = None) -> None:
         p = sub.add_parser(command)
         p.add_argument("--slug", required=True)
     sub.add_parser("build-site", help="Regenerate all GitHub Pages HTML and RSS files")
-    sub.add_parser("demo", help="Create a source-free offline example; no TTS calls")
     args = parser.parse_args(argv)
     try:
-        if args.command == "demo":
-            demo()
-        elif args.command == "build-site":
+        if args.command == "build-site":
             from .website import build_site
             count, path = build_site()
             print(f"Built {count} episode pages in {path}")
@@ -177,8 +148,7 @@ def main(argv: list[str] | None = None) -> None:
                 print("Review and edit turns in episode.json, then run 'run --slug <slug> --approve'.")
                 return
             if not args.approve and ep.get("approved_script_hash") != script_hash(ep):
-                print("Review checkpoint. Edit episode.json as needed. Then rerun with --approve.")
-                return
+                parser.exit(2, "Review checkpoint: edit and review episode.json, then rerun with --approve.\n")
             if args.approve:
                 ep = approve(folder, ep)
             current = script_hash(ep)
@@ -200,8 +170,28 @@ def main(argv: list[str] | None = None) -> None:
                 upload(folder, ep)
             elif args.command == "publish":
                 publish(folder, ep)
-    except (ValueError, FileNotFoundError, RuntimeError) as exc:
-        parser.exit(2, f"Error: {exc}\n")
+    except Exception as exc:
+        detail = str(exc).strip() or "No additional details were provided."
+        action = "Check the command inputs and .env configuration, then retry."
+        name = type(exc).__name__
+        if isinstance(exc, FileNotFoundError):
+            action = "Run the prerequisite command shown in the error, or verify the referenced path."
+        elif isinstance(exc, json.JSONDecodeError):
+            action = "Fix the malformed JSON file, then rerun the command."
+        elif "approved" in detail.lower() or "review checkpoint" in detail.lower():
+            action = "Review episode.json and rerun with --approve only after accepting the transcript."
+        elif "missing" in detail.lower() and "configure .env" in detail.lower():
+            action = "Set the named variable in .env, verify it is not replace_me, and rerun."
+        elif "403" in detail or "401" in detail or "Unauthorized" in detail:
+            action = "Verify the API key, enabled API, billing, and key restrictions, then wait a few minutes and retry."
+        elif "429" in detail or "timeout" in detail.lower() or "temporarily" in detail.lower():
+            action = "Wait for the provider to recover and rerun; completed cached segments will be reused."
+        elif "ffmpeg" in detail.lower() or "ffprobe" in detail.lower():
+            action = "Install ffmpeg and ffprobe, confirm they are on PATH, then rerun."
+        elif "R2" in detail or "bucket" in detail.lower():
+            action = "Verify R2 credentials, bucket name, public URL, and network access, then rerun."
+        print(f"Error [{name}]: {detail}\nAction: {action}", file=sys.stderr)
+        parser.exit(2)
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="description" content="A peer-to-peer technical design discussion co-creating a robust distributed API rate limiter. The conversation evaluates strong candidate algorithms, their trade-offs, failure modes, observability, and failure handling to balance burst tolerance, fairness, latency, and operational simplicity in a multi-gateway environment with an external Redis backing store."><meta name="theme-color" content="#101b27">
 <title>Designing a Distributed API Rate Limiter Across Multiple Gateways — System Design on the Go</title>
-<link rel="stylesheet" href="../../assets/styles.css">
+<link rel="stylesheet" href="../../assets/styles.css"><link rel="stylesheet" href="../../assets/player.css">
 <link rel="alternate" type="application/rss+xml" title="Podcast RSS" href="../../feed.xml"></head>
 <body><a class="skip" href="#main">Skip to content</a><div class="shell">
 <header class="masthead"><a class="brand" href="../../"><span class="brand-mark">S</span> System Design <span class="muted">on the Go</span></a>
@@ -11,7 +11,7 @@
 <section class="hero episode-hero"><div class="eyebrow">COLLABORATIVE SYSTEM DESIGN · 2026-11-20</div>
 <h1>Designing a Distributed API Rate Limiter Across Multiple Gateways</h1><p class="lede">A peer-to-peer technical design discussion co-creating a robust distributed API rate limiter. The conversation evaluates strong candidate algorithms, their trade-offs, failure modes, observability, and failure handling to balance burst tolerance, fairness, latency, and operational simplicity in a multi-gateway environment with an external Redis backing store.</p>
 <p class="problem"><strong>Design challenge:</strong> Design a distributed API rate limiter that protects backend services while balancing burst tolerance, fairness, accuracy, latency, and operational simplicity across multiple gateways.</p></section>
-<div class="player"><div class="eyebrow">LISTEN TO EPISODE</div><audio controls preload="none" aria-label="Play Designing a Distributed API Rate Limiter Across Multiple Gateways"><source src="https://pub-47b19fee7291446c9f2c625d7fd110b4.r2.dev/episodes/rate-limit-algorithms/4af6d4db990d1053eb33.mp3" type="audio/mpeg">Your browser does not support the audio element.</audio><p class="small">Two AI-generated voices • 9 min</p></div>
+<div class="player"><div class="eyebrow">LISTEN TO EPISODE</div><audio controls preload="none" data-episode-audio aria-label="Play Designing a Distributed API Rate Limiter Across Multiple Gateways"><source src="https://pub-47b19fee7291446c9f2c625d7fd110b4.r2.dev/episodes/rate-limit-algorithms/4af6d4db990d1053eb33.mp3" type="audio/mpeg">Your browser does not support the audio element.</audio><div class="audio-controls" aria-label="Playback controls"><button type="button" class="audio-button" data-seek="-15" aria-label="Rewind 15 seconds">↶ 15s</button><button type="button" class="audio-button" data-seek="15" aria-label="Forward 15 seconds">15s ↷</button><label class="speed-control" for="playback-speed">Speed</label><select id="playback-speed" class="speed-select" data-playback-speed aria-label="Playback speed"><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></div><p class="small">Two AI-generated voices • 9 min</p></div>
 <section class="transcript"><details><summary><span>Read the full conversation</span><span class="hint">Transcript hidden by default • Expand</span></summary>
 <div class="transcript-body"><div class="turn"><div class="speaker sA">Engineer A</div><p>Let&#x27;s start by outlining the essential requirements for our distributed API rate limiter. We need it to work across multiple gateways with no single point of bottleneck, allow bursts but still impose fairness so no user can starve others or monopolize resources, be accurate to avoid abuse, keep latency low so it doesn&#x27;t slow down our API responsiveness, and be operationally simple enough to maintain and scale. Also, we have to support rules keyed by per-user or per-API-key, persist state in an external store like Redis for horizontal scaling and server restarts, and apply fail-open behavior when the backing store fails. Plus, we want to communicate rate limit status back to clients using standard HTTP status 429 and appropriate headers.</p></div>
 <div class="turn"><div class="speaker sB">Engineer B</div><p>Right. Given those requirements and assumptions, the crux is balancing the algorithm trade-offs. The choices typically boil down to fixed window, sliding window—usually an approximate kind for efficiency—and token bucket. Fixed window is the simplest but it allows bursts up to twice the limit near window boundaries, which can cause resource spikes. The sliding window smooths requests over time, improving fairness, but is more complex and less intuitive. Token buckets directly support bursts within the bucket size and control long-term average rates but come with their own complexity and challenges in communicating state to clients.</p></div>
@@ -37,4 +37,18 @@
 <section class="notice disclosure"><strong>Transparency:</strong> This is a synthetic discussion between AI voices, not a recording of real engineers. Technical claims require independent verification.</section></main>
 <footer>AI-generated voices and dialogue. Verify engineering decisions against their sources. <span>© System Design on the Go</span><br>
 Copyright concern? <a href="https://github.com/JeffreyDallas/system-design-on-the-go/issues" target="_blank" rel="noopener noreferrer">Contact us to request review or removal.</a></footer>
-</div></body></html>
+</div><script>
+(() => {
+  const audio = document.querySelector('[data-episode-audio]');
+  if (!audio) return;
+  document.querySelectorAll('[data-seek]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const delta = Number(button.dataset.seek);
+      const target = Math.max(0, audio.currentTime + delta);
+      audio.currentTime = Number.isFinite(audio.duration) ? Math.min(target, audio.duration) : target;
+    });
+  });
+  const speed = document.querySelector('[data-playback-speed]');
+  speed.addEventListener('change', () => { audio.playbackRate = Number(speed.value); });
+})();
+</script></body></html>

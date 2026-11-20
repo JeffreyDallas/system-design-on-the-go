@@ -30,7 +30,7 @@ def base_html(title: str, content: str, relative: str, meta_description: str) ->
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="description" content="{h(meta_description)}"><meta name="theme-color" content="#101b27">
 <title>{h(title)} — System Design on the Go</title>
-<link rel="stylesheet" href="{relative}assets/styles.css">
+<link rel="stylesheet" href="{relative}assets/styles.css"><link rel="stylesheet" href="{relative}assets/player.css">
 <link rel="alternate" type="application/rss+xml" title="Podcast RSS" href="{relative}feed.xml"></head>
 <body><a class="skip" href="#main">Skip to content</a><div class="shell">
 <header class="masthead"><a class="brand" href="{relative}"><span class="brand-mark">S</span> System Design <span class="muted">on the Go</span></a>
@@ -45,7 +45,15 @@ def episode_html(ep: dict) -> str:
     title = ep["title"]
     audio = public_link(ep.get("audio_url", ""))
     player = (f'<div class="player"><div class="eyebrow">LISTEN TO EPISODE</div>'
-              f'<audio controls preload="none" aria-label="Play {h(title)}"><source src="{h(audio)}" type="audio/mpeg">Your browser does not support the audio element.</audio>'
+              f'<audio controls preload="none" data-episode-audio aria-label="Play {h(title)}"><source src="{h(audio)}" type="audio/mpeg">Your browser does not support the audio element.</audio>'
+              '<div class="audio-controls" aria-label="Playback controls">'
+              '<button type="button" class="audio-button" data-seek="-15" aria-label="Rewind 15 seconds">↶ 15s</button>'
+              '<button type="button" class="audio-button" data-seek="15" aria-label="Forward 15 seconds">15s ↷</button>'
+              '<label class="speed-control" for="playback-speed">Speed</label>'
+              '<select id="playback-speed" class="speed-select" data-playback-speed aria-label="Playback speed">'
+              '<option value="0.75">0.75×</option><option value="1" selected>1×</option>'
+              '<option value="1.25">1.25×</option><option value="1.5">1.5×</option>'
+              '<option value="2">2×</option></select></div>'
               f'<p class="small">Two AI-generated voices • {h(round(ep.get("duration_seconds", 0)/60))} min</p></div>') if audio else '<div class="notice">Audio is not published yet. Transcript preview is available below.</div>'
     turns = "\n".join(
         f'<div class="turn"><div class="speaker s{h(t["speaker"])}">Engineer {h(t["speaker"])}</div><p>{h(t["text"])}</p></div>'
@@ -69,7 +77,24 @@ def episode_html(ep: dict) -> str:
 <div class="transcript-body">{turns}</div></details></section>
 {source_section}
 <section class="notice disclosure"><strong>Transparency:</strong> This is a synthetic discussion between AI voices, not a recording of real engineers. Technical claims require independent verification.</section>'''
-    return base_html(title, content, "../../", ep.get("description", ""))
+    page = base_html(title, content, "../../", ep.get("description", ""))
+    if audio:
+        page = page.replace('</body>', '''<script>
+(() => {
+  const audio = document.querySelector('[data-episode-audio]');
+  if (!audio) return;
+  document.querySelectorAll('[data-seek]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const delta = Number(button.dataset.seek);
+      const target = Math.max(0, audio.currentTime + delta);
+      audio.currentTime = Number.isFinite(audio.duration) ? Math.min(target, audio.duration) : target;
+    });
+  });
+  const speed = document.querySelector('[data-playback-speed]');
+  speed.addEventListener('change', () => { audio.playbackRate = Number(speed.value); });
+})();
+</script></body>''')
+    return page
 
 
 def index_html(episodes: list[dict], config: dict) -> str:
@@ -79,7 +104,7 @@ def index_html(episodes: list[dict], config: dict) -> str:
         cards.append(f'''<article class="episode-card"><div class="eyebrow">{h(ep.get('published_at',ep.get('created_at',''))[:10])} · {h(minutes)}</div>
 <h2><a href="episodes/{h(ep['slug'])}/">{h(ep['title'])}</a></h2>
 <p>{h(ep.get('description',''))}</p><a class="readmore" href="episodes/{h(ep['slug'])}/">Explore episode →</a></article>''')
-    cards_html = "".join(cards) or '<p class="notice">No episodes published yet. Try the demo command or create your first episode.</p>'
+    cards_html = "".join(cards) or '<p class="notice">No episodes published yet. Create your first episode to get started.</p>'
     content = f'''<section class="hero"><div class="eyebrow">AN ENGINEERING PODCAST, BUILT BY AGENTS</div>
 <h1>Better system design starts with a <em>conversation.</em></h1>
 <p class="lede">{h(config.get('tagline','Two engineers. One problem. Better architecture.'))}</p>

@@ -4,6 +4,8 @@ import hashlib
 import json
 import os
 import re
+import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -62,3 +64,22 @@ def secure_https_url(url: str) -> str:
 
 def script_hash(episode: dict) -> str:
     return sha256(json.dumps(episode["turns"], ensure_ascii=False, sort_keys=True).encode())
+
+
+def retry_call(operation, *, attempts: int = 4, label: str = "operation",
+               retry_if=None, initial_delay: float = 1.0, max_delay: float = 20.0):
+    """Retry a transient operation with visible progress and bounded backoff."""
+    last_error = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return operation()
+        except Exception as exc:  # callers provide retry_if for non-transient errors
+            last_error = exc
+            transient = retry_if(exc) if retry_if else True
+            if not transient or attempt == attempts:
+                raise
+            delay = min(initial_delay * (2 ** (attempt - 1)), max_delay)
+            print(f"{label} failed ({type(exc).__name__}); retry {attempt}/{attempts - 1} in {delay:.0f}s...",
+                  file=sys.stderr, flush=True)
+            time.sleep(delay)
+    raise last_error  # pragma: no cover

@@ -1,0 +1,6 @@
+.audio-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.audio-button,.speed-select{font:inherit;color:var(--text);background:#12232d;border:1px solid #527477;border-radius:8px;padding:8px 11px}
+.audio-button{cursor:pointer}
+.audio-button:hover,.audio-button:focus-visible,.speed-select:focus-visible{border-color:var(--accent);background:#18343c}
+.speed-control{font-size:13px;color:var(--muted);margin-left:8px}
+.speed-select{cursor:pointer}

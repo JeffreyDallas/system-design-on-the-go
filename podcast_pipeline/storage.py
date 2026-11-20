@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from urllib.parse import quote
 
-from .util import env, secure_https_url, sha256
+from .util import env, retry_call, secure_https_url, sha256
 
 
 def upload_audio(file: Path, slug: str) -> dict:
@@ -31,9 +31,11 @@ def upload_audio(file: Path, slug: str) -> dict:
         if exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode") not in (403, 404):
             raise
         # HEAD may be prohibited by a limited token; upload safely overwrites same content.
-        with file.open("rb") as stream:
-            client.upload_fileobj(stream, bucket, key, ExtraArgs={
-                "ContentType": "audio/mpeg", "CacheControl": "public, max-age=31536000, immutable"
-            })
+        def upload():
+            with file.open("rb") as stream:
+                client.upload_fileobj(stream, bucket, key, ExtraArgs={
+                    "ContentType": "audio/mpeg", "CacheControl": "public, max-age=31536000, immutable"
+                })
+        retry_call(upload, label="R2 upload", retry_if=lambda exc: not isinstance(exc, ValueError))
     url = f"{base}/{quote(key, safe='/')}"
     return {"audio_url": url, "audio_sha256": digest, "audio_bytes": file.stat().st_size, "storage_key": key}

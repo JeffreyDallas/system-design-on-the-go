@@ -11,7 +11,15 @@ from pathlib import Path
 
 import httpx
 
-from .util import MAX_EPISODE_SECONDS, ROOT, env, sha256, script_hash
+from .util import MAX_EPISODE_SECONDS, ROOT, env, retry_call, sha256, script_hash
+
+
+def _retryable_http_error(exc: Exception) -> bool:
+    if isinstance(exc, httpx.TransportError):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code == 429 or exc.response.status_code >= 500
+    return False
 
 
 def validate_duration(seconds: float) -> float:
@@ -29,7 +37,7 @@ def _tts_segment(text: str, voice_id: str, output: Path) -> None:
     key = env("ELEVENLABS_API_KEY")
     model = os.getenv("ELEVENLABS_MODEL", "eleven_multilingual_v2")
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
-    for attempt in range(4):
+    def request():
         with httpx.Client(timeout=120) as client:
             response = client.post(
                 url,
@@ -37,18 +45,15 @@ def _tts_segment(text: str, voice_id: str, output: Path) -> None:
                 headers={"xi-api-key": key, "Content-Type": "application/json", "Accept": "audio/mpeg"},
                 json={"text": text, "model_id": model},
             )
-        if response.status_code in (429, 500, 502, 503, 504) and attempt < 3:
-            time.sleep(min(2 ** attempt, 8))
-            continue
         response.raise_for_status()
         if not response.content.startswith((b"ID3", b"\xff\xfb", b"\xff\xf3", b"\xff\xf2")):
             raise ValueError("Speech API returned unrecognized audio bytes")
-        output.parent.mkdir(parents=True, exist_ok=True)
-        part = output.with_suffix(".part")
-        part.write_bytes(response.content)
-        part.replace(output)
-        return
-    raise RuntimeError("Speech API exhausted retry attempts")
+        return response.content
+    audio = retry_call(request, label="ElevenLabs speech request", retry_if=_retryable_http_error)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    part = output.with_suffix(".part")
+    part.write_bytes(audio)
+    part.replace(output)
 
 
 def _local_tts_segment(text: str, voice_id: str, output: Path) -> None:
@@ -82,21 +87,23 @@ def _google_tts_segment(text: str, voice_id: str, output: Path) -> None:
     """Use Google Cloud Text-to-Speech with an API key and a named voice."""
     key = env("GOOGLE_CLOUD_AUDIO_API_KEY")
     language_code = os.getenv("GOOGLE_TTS_LANGUAGE_CODE", "en-US").strip()
-    response = httpx.post(
-        "https://texttospeech.googleapis.com/v1/text:synthesize",
-        params={"key": key},
-        json={
-            "input": {"text": text},
-            "voice": {"languageCode": language_code, "name": voice_id},
-            "audioConfig": {"audioEncoding": "MP3"},
-        },
-        timeout=120,
-    )
-    response.raise_for_status()
-    try:
-        audio = base64.b64decode(response.json()["audioContent"], validate=True)
-    except (KeyError, TypeError, ValueError) as exc:
-        raise RuntimeError("Google TTS returned an invalid audio response") from exc
+    def request():
+        response = httpx.post(
+            "https://texttospeech.googleapis.com/v1/text:synthesize",
+            params={"key": key},
+            json={
+                "input": {"text": text},
+                "voice": {"languageCode": language_code, "name": voice_id},
+                "audioConfig": {"audioEncoding": "MP3"},
+            },
+            timeout=120,
+        )
+        response.raise_for_status()
+        try:
+            return base64.b64decode(response.json()["audioContent"], validate=True)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeError("Google TTS returned an invalid audio response") from exc
+    audio = retry_call(request, label="Google TTS request", retry_if=_retryable_http_error)
     if not audio.startswith((b"ID3", b"\xff\xfb", b"\xff\xf3", b"\xff\xf2")):
         raise ValueError("Google TTS returned unrecognized audio bytes")
     output.parent.mkdir(parents=True, exist_ok=True)

@@ -118,6 +118,8 @@ def test_transcript_hidden_and_escaped():
     html = episode_html(valid_episode())
     assert "<details>" in html and "<details open" not in html
     assert "<audio controls" in html
+    assert 'data-seek="-15"' in html and 'data-seek="15"' in html
+    assert "data-playback-speed" in html and "playbackRate" in html
     assert "<script>alert(1)</script>" not in html
     assert "&lt;script&gt;" in html
     assert "&lt;img src=x&gt;" in html
