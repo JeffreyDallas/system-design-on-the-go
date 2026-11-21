@@ -78,7 +78,12 @@
       "text": "Absolutely. Also, I’d suggest starting a proof-of-concept for the metadata sharding and cache layers since metadata consistency and performance often drive system responsiveness. That will inform how fast we can surface new or updated videos after transcoding. With those pieces progressing, we can iterate on the pipeline orchestration and operational controls. Overall, the design aligns with industry best practices and balances scalability, latency, security, and cost — a good foundation to build on."
     }
   ],
-  "approved_script_hash": "",
-  "rendered_script_hash": "",
-  "audio_url": ""
+  "approved_script_hash": "e09d30d90e8af73e8534f29263b47f08d320ab00ff12cb1b6d4e19df28fa7c9b",
+  "rendered_script_hash": "e09d30d90e8af73e8534f29263b47f08d320ab00ff12cb1b6d4e19df28fa7c9b",
+  "audio_url": "https://pub-47b19fee7291446c9f2c625d7fd110b4.r2.dev/episodes/designing-a-scalable-video-sharing-platform/a1cc5506c4707ef5ee33.mp3",
+  "audio_sha256": "a1cc5506c4707ef5ee33a6dd8736bc645bbad32d1e6d79c1454422442bc873e9",
+  "duration_seconds": 582.67,
+  "audio_bytes": 9323948,
+  "storage_key": "episodes/designing-a-scalable-video-sharing-platform/a1cc5506c4707ef5ee33.mp3",
+  "published_at": "2026-11-21T05:13:40+00:00"
 }
