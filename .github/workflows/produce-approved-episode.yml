@@ -33,6 +33,7 @@ jobs:
         with:
           ref: main
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
@@ -68,6 +69,9 @@ jobs:
           MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
           set -euo pipefail
+          for required in R2_ACCOUNT_ID R2_BUCKET R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_PUBLIC_BASE_URL; do
+            [[ -n "${!required:-}" ]] || { echo "Missing production setting: $required" >&2; exit 1; }
+          done
           if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
             [[ "$PR_NUMBER" =~ ^[0-9]+$ ]] || { echo "Invalid PR number: $PR_NUMBER" >&2; exit 1; }
             merge_sha=$(gh pr view "$PR_NUMBER" --json mergeCommit -q .mergeCommit.oid)
@@ -89,4 +93,5 @@ jobs:
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add episodes docs
           git diff --cached --quiet || git commit -m "Publish approved episode"
+          gh auth setup-git
           git push
