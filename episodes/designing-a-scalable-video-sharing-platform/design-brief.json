@@ -1,0 +1,149 @@
+{
+  "requirements": [
+    "Support video upload from millions of creators worldwide",
+    "Support video playback for billions of daily views",
+    "Support multiple client types: mobile apps, web browsers, smart TVs",
+    "Handle international users with multi-language support",
+    "Support a range of video resolutions and formats, up to 1GB file size",
+    "Ensure high availability, scalability, and low latency for video streaming",
+    "Provide smooth video streaming with ability to dynamically change video quality",
+    "Support video encryption for secure storage and streaming",
+    "Minimize infrastructure and operational costs, especially CDN costs",
+    "Leverage existing cloud infrastructure for storage and CDN",
+    "Store both original and transcoded videos efficiently",
+    "Transcode videos into multiple formats and bitrates for device compatibility and adaptive streaming",
+    "Update and maintain video metadata with high performance and reliability",
+    "Handle asynchronous workflows such as transcoding completion updates",
+    "Provide a mechanism for error handling and retry in video processing",
+    "Support extensible and flexible video processing pipelines possibly modeled as DAGs"
+  ],
+  "assumptions": [
+    "Video uploads are of small to medium size, maxing at 1GB per video",
+    "Daily active users estimated at 5 million with 10% uploading daily",
+    "Average video size estimated at roughly 300MB",
+    "Users watch an average of 5 videos per day",
+    "Video streaming traffic originates from multiple global locations but cost estimated primarily with US-based pricing for CDN egress",
+    "Use of established cloud blob storage for original and transcoded video storage",
+    "Use of established CDN service for video streaming to reduce latency",
+    "Metadata database is sharded and replicated for performance and reliability",
+    "Caching of metadata and user objects employed to reduce database load",
+    "Video transcoding is compute intensive and handled by dedicated transcoding servers",
+    "Video processing pipelines are modeled as DAGs to allow for parallel and sequential tasks",
+    "Streaming protocols like MPEG-DASH or HLS will be used to support adaptive streaming",
+    "The system supports multiple video codecs and containers to maximize device compatibility",
+    "Completion queues and handlers are used for asynchronous updates post transcoding",
+    "Use of cloud provider’s CDN pricing and capabilities for cost and performance planning"
+  ],
+  "alternatives": [
+    {
+      "name": "Build custom blob storage and CDN",
+      "advantages": [
+        "Full control over storage and streaming infrastructure",
+        "Potential for optimizations specific to platform needs"
+      ],
+      "disadvantages": [
+        "Very high complexity and engineering cost",
+        "Longer time to market",
+        "Scaling to billions of views requires massive infrastructure investment",
+        "Higher operational risk and maintenance overhead"
+      ]
+    },
+    {
+      "name": "Leverage cloud provider managed blob storage and CDN",
+      "advantages": [
+        "Reduced operational complexity",
+        "Benefit from scalability and reliability of mature cloud services",
+        "Faster development and deployment",
+        "Cost savings through economies of scale from cloud providers"
+      ],
+      "disadvantages": [
+        "Less control over infrastructure",
+        "Ongoing operational costs may be substantial, especially CDN egress",
+        "Dependence on cloud provider’s SLAs and pricing changes"
+      ]
+    }
+  ],
+  "failure_modes": [
+    "Video upload failing due to network issues or storage unavailability",
+    "Transcoding failures from malformed or unsupported video formats",
+    "Metadata database or cache inconsistency leading to stale or incorrect video info",
+    "CDN cache misses causing increased latency or origin overload",
+    "Resource exhaustion in transcoding servers delaying processing",
+    "Queue bottlenecks causing delays in updating metadata or video availability",
+    "Client incompatibility with video formats or streaming protocols",
+    "High CDN egress costs exceeding budget",
+    "International users experiencing increased latency due to lack of CDN edge presence",
+    "Security breach exposing video data due to weak encryption or access control"
+  ],
+  "evidence": [
+    {
+      "source_id": "S1",
+      "claim": "Video uploading flow involves original blob storage, transcoding servers, transcoded storage, CDN caching, metadata database, cache, and completion queue with handlers."
+    },
+    {
+      "source_id": "S1",
+      "claim": "Video streaming flow streams video directly from CDN edge servers supporting adaptive streaming protocols."
+    },
+    {
+      "source_id": "S1",
+      "claim": "Metadata is sharded and replicated for performance and high availability, with caching to improve read performance."
+    },
+    {
+      "source_id": "S1",
+      "claim": "Video transcoding pipelines can be modeled as Directed Acyclic Graphs (DAG) to allow flexible and parallel processing."
+    },
+    {
+      "source_id": "S1",
+      "claim": "Leveraging existing cloud services like blob storage and CDN is recommended to reduce complexity and cost."
+    }
+  ],
+  "uncertainties": [
+    "How many transcoding formats and bitrates are required to balance quality and cost?",
+    "What is the failover strategy if the CDN edge server is unreachable?",
+    "How to optimize CDN cache hit ratio to control egress cost?",
+    "Details of encryption method and key management across storage and CDN",
+    "Mechanisms to monitor and autoscale transcoding resources based on workload",
+    "User privacy requirements impacting metadata handling",
+    "Handling video streaming interruptions on unstable mobile networks",
+    "Capacity planning for metadata database considering sharding keys and growth rates",
+    "Integration details of DAG model with real-time transcoding workflow",
+    "Unverified research claim (source not retained): HLS supports multiple alternate streams at different bit rates and intelligent switching in response to bandwidth changes.",
+    "Unverified research claim (source not retained): Modern Apple HLS documents support CMAF content on current Apple OS versions and describe CMAF switching sets for adaptive playback.",
+    "Unverified research claim (source not retained): DASH-IF CMAF guidance defines media profiles and codec signaling needed for interoperable adaptive streaming.",
+    "Unverified research claim (source not retained): Apple’s HLS authoring guidance says multiple video streams should provide all anticipated bandwidths, which supports encoding ladders rather than a single rendition.",
+    "Unverified research claim (source not retained): AWS MediaConvert documents support for common delivery codecs including AVC/H.264, HEVC/H.265, and AV1, with codec-specific resolution ceilings.",
+    "Unverified research claim (source not retained): AWS S3 multipart upload reduces recovery cost for network interruptions because only failed parts need retrying.",
+    "Unverified research claim (source not retained): S3 multipart upload with versioning creates a new version on completion, and KMS permissions are required for encrypted multipart uploads.",
+    "Unverified research claim (source not retained): Google Cloud streaming docs show protocol/container/DRM/encryption combinations, including HLS AES-128, SAMPLE-AES, and MPEG-CENC variants.",
+    "Unverified research claim (source not retained): Google Cloud Live Stream/Transcoder docs indicate encryption keys are provided via Secret Manager and access is governed by IAM.",
+    "Unverified research claim (source not retained): CloudFront guidance says cache-hit ratio can be improved by serving more requests from the cache and using Origin Shield."
+  ],
+  "source_assessment": {
+    "sufficient": false,
+    "gaps": [
+      "Detailed design of transcoding formats, bitrates, and codec support",
+      "Robust error recovery strategies and retry policies for upload and transcoding failures",
+      "Security and encryption implementation details for stored and streamed videos",
+      "Real-time adaptive streaming algorithms and client switching logic",
+      "Operational monitoring, alerting, and autoscaling mechanisms",
+      "Cost optimization strategies beyond CDN usage (e.g., caching, regional replication)",
+      "Comprehensive handling of internationalization and localization",
+      "Detailed client compatibility matrix for video formats and streaming protocols"
+    ],
+    "research_questions": [
+      "What are the optimal transcoding configurations to support given bandwidth and device diversity?",
+      "How can CDN edge caching be optimized to balance latency and egress cost?",
+      "What encryption standards and key management best practices apply for video storage and delivery?",
+      "What is the best approach to ensure metadata consistency and durability at scale?",
+      "What fault-tolerant workflows can be designed for transcoding pipelines using DAG models?",
+      "How to scale metadata and API servers efficiently for millions of creators and viewers?",
+      "What monitoring and alerting tools can be integrated to proactively detect system issues?",
+      "How do different streaming protocols affect client playback experience and adaptation?"
+    ]
+  },
+  "research": {
+    "research_summary": "For a large-scale video upload/playback system, the strongest primary-source-backed design choices are: (1) use adaptive bitrate streaming with HLS and/or MPEG-DASH, preferably CMAF-packaged segments so a single encoded asset can serve multiple playback paths; Apple documents HLS support for multiple bitrate tiers, intelligent switching on bandwidth changes, and CMAF support on modern Apple platforms, while DASH-IF documents CMAF media profiles and codec signaling. (2) Build an explicit encoding ladder rather than a single output: authoritative cloud guidance shows common production codecs include AVC/H.264, HEVC/H.265, and AV1, with vendor-specific max output resolutions and recommended encoding settings; Apple’s HLS authoring spec notes that multiple streams should cover anticipated bandwidths. (3) Use multipart upload for large source files so interrupted uploads can retry only failed parts instead of restarting, and pair it with checksum validation and object versioning. (4) Encrypt stored media with cloud object encryption plus streaming encryption/DRM; for delivery, HLS/CMAF commonly uses cbcs or AES-128/SAMPLE-AES variants, and Google Cloud’s live-stream docs explicitly distinguish encryption schemes by protocol/container/DRM. (5) For delivery cost and latency, CloudFront guidance recommends increasing cache hit ratio and using Origin Shield; this directly supports the usual strategy of edge caching popular renditions and minimizing origin fetches. (6) For transcoding workflows, cloud transcoder systems expose explicit job limits and IAM-based access control; the interview-style DAG scheduler concept is consistent with these managed pipeline semantics, but the exact DAG implementation details are an architectural choice rather than a standard. (7) For observability, the primary sources here do not prescribe a single monitoring stack, but the operational implication is to instrument upload completion, transcode job stages, CDN hit ratio, error rates, and queue lag because those are the critical control points exposed by the upload/transcode/CDN model. There is still uncertainty on the exact optimal bitrate ladder, codec mix, and client compatibility matrix because those depend on target devices, content type, and product constraints; the sources support the framework, not a one-size-fits-all ladder.",
+    "evidence": [],
+    "sources": []
+  }
+}

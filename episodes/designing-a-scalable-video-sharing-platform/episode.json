@@ -1,0 +1,84 @@
+{
+  "slug": "designing-a-scalable-video-sharing-platform",
+  "transcript_format": "conversation-v1",
+  "title": "Designing a Global Video Upload and Playback System at Scale",
+  "description": "An in-depth conversation between two engineers collaboratively designing a large-scale video platform that supports millions of creators and billions of views globally with adaptive streaming, secure storage, and cost-effective delivery using cloud infrastructure.",
+  "problem": "Design a system supporting video upload and playback at large scale, handling billions of daily views and millions of creators across multiple client types worldwide, balancing availability, latency, and storage.",
+  "created_at": "2026-11-20T22:53:50+00:00",
+  "references": [
+    {
+      "id": "S1",
+      "title": "ByteByteGo | Technical Interview Prep",
+      "url": "https://bytebytego.com/courses/system-design-interview/design-youtube"
+    }
+  ],
+  "turns": [
+    {
+      "speaker": "A",
+      "text": "Let's start by outlining the core requirements for our video system. We need to support uploads from millions of creators worldwide, with videos up to about one gigabyte. On the playback side, we should handle billions of daily views across mobile apps, web browsers, and smart TVs, all while guaranteeing high availability, low latency, and scalability. We also have to provide internationalization, multiple video resolutions and formats, and most importantly, security through encryption. Does that sound like a reasonable framing for our design?"
+    },
+    {
+      "speaker": "B",
+      "text": "Yes, that's a solid baseline. We should also explicitly consider that users watch multiple videos daily, so request volume is tremendous. Given the global user base, latency is crucial, which means we must leverage content delivery networks, or CDNs, to cache video content close to users. On that note, since CDN egress costs can explode, we need to optimize cache hit ratios aggressively. That suggests caching popular transcoded renditions near edge locations and minimizing origin pulls from blob storage."
+    },
+    {
+      "speaker": "A",
+      "text": "Agreed. Building on that, for storage and delivery, it would be impractical to build and operate our own blob storage and CDN infrastructure at this scale. Leveraging established cloud-managed blob storage and CDN services seems the most pragmatic approach, considering complexity, cost, and time to market. Although this introduces some operational dependencies and ongoing expenses, the scale and reliability benefits outweigh the downsides."
+    },
+    {
+      "speaker": "B",
+      "text": "Right. For the upload flow, creators submit their videos to a service that stores the complete, original files in durable blob storage. To optimize upload reliability and recover gracefully from network interruptions, we should support multipart uploads, so if part of the video upload fails, only that chunk needs retransmission. Also, perhaps we version objects, so the final upload completion is atomic and can roll back inconsistencies. Given that files can be up to a gigabyte, we need a robust upload protocol with strong validation and error handling."
+    },
+    {
+      "speaker": "A",
+      "text": "Yes, multipart upload with checksums per chunk sounds like a good strategy to keep upload failures minimal and retriable efficiently. Once uploaded, the original video moves into the transcoding pipeline. Since video transcoding is compute-intensive, we should have dedicated transcoding servers or a managed service that can scale elastically. Using our model of Directed Acyclic Graphs, or DAGs, for processing pipelines will help parallelize compatible steps while sequencing dependent ones, such as first validating format, then transcoding to multiple formats and bitrates."
+    },
+    {
+      "speaker": "B",
+      "text": "Exactly, modeling the pipeline as a DAG gives us flexibility to incorporate future processing steps like thumbnail generation, metadata extraction, or content moderation in parallel or sequentially. For transcoding output, we must generate multiple renditions covering different resolutions, bitrates, and codecs to enable adaptive streaming based on user device and network conditions. Our assumptions include supporting popular codecs like AVC, HEVC, and AV1. Choosing this encoding ladder is tricky since it affects storage, cost, and playback compatibility, so it's an open design decision requiring further profiling."
+    },
+    {
+      "speaker": "A",
+      "text": "Right, and for streaming protocols, MPEG-DASH and HTTP Live Streaming, or HLS, are industry standards supporting adaptive bitrate switching. Packaging our transcoded segments in a format like CMAF, or Common Media Application Format, enables efficient delivery to multiple clients with minimal redundancy. Apple’s HLS guidance supports multiple alternate streams for adaptive playback, so our system should produce segments compatible with this. That way, the client players can switch video quality seamlessly to optimize user experience on unstable networks."
+    },
+    {
+      "speaker": "B",
+      "text": "Yes, that's important especially given mobile users with fluctuating bandwidth. On security, we need robust encryption for stored videos and streaming data. Cloud providers typically offer storage-side encryption, but for streaming, we may need to integrate DRM solutions or streaming encryption schemes like AES-128 or SAMPLE-AES. Key management could use a secrets manager with strict IAM controls. This ensures that only authorized clients can decrypt and view video content. We also should consider encrypting metadata at rest or at least protecting sensitive user data in compliance with privacy requirements."
+    },
+    {
+      "speaker": "A",
+      "text": "Good point on encryption, and we need to architect the metadata store carefully. Given millions of creators and billions of views, the metadata database must be sharded and replicated to achieve the required throughput and durability. We should implement caching layers to alleviate database load for frequently accessed metadata. Eventual consistency may be acceptable in some reads to maximize scalability but writes, such as updates after transcoding completes, should be strongly consistent to avoid displaying stale video status or incorrect availability."
+    },
+    {
+      "speaker": "B",
+      "text": "Agreed. For asynchronous workflows, completion queues are vital. After transcoding tasks finish, we enqueue completion events that trigger metadata updates, cache invalidations, and video availability changes. This decouples processing and ensures resilience if any component is temporarily unavailable. We also need retry policies in queues to handle transient failures in downstream systems. Observability is critical here — we must instrument upload success rates, transcoding job status, queue depths, CDN cache hit ratios, and playback errors to alert on failures or bottlenecks before they degrade user experience."
+    },
+    {
+      "speaker": "A",
+      "text": "Monitoring will also help us scale transcoding clusters proactively, for example, autoscaling based on queue length or job wait times. Similarly, we should monitor metadata storage usage and cache hit ratios to trigger scaling or data rebalancing. Regarding CDN usage, increasing the cache hit ratio reduces egress costs and improves latency. We can explore mechanisms like Origin Shield, or secondary caching layers close to the origin, to minimize origin fetches and reduce traffic spikes."
+    },
+    {
+      "speaker": "B",
+      "text": "Considering failure scenarios, uploads may fail due to network or storage glitches — thus multipart retry and upload validation are essential. Transcoding may fail if the video format is unsupported or corrupted, and we should capture these errors, notify users gracefully, and possibly support manual intervention or fallback transcodes. Metadata database inconsistency could cause visibility issues, so implementing strong transactional writes combined with caching invalidations is vital. CDN cache misses may increase latency; we could mitigate that by pre-warming caches for trending content or using predictive caching strategies."
+    },
+    {
+      "speaker": "A",
+      "text": "On client compatibility, we must keep an evolving matrix of supported codecs and streaming protocols per device and OS version. This helps us decide transcoding output sets and fallback options. For unstable mobile networks, adaptive bitrate streaming allows the player to adjust quality dynamically, which improves user experience. However, we should design the pipeline to minimize startup latency by optimizing segment duration and prefetching data at the player level. Also, for international users in regions without nearby CDN edges, a partial regional cache or multi-CDN strategy might be necessary, though that increases cost and complexity."
+    },
+    {
+      "speaker": "B",
+      "text": "True, multi-CDN or regional replication could ensure lower latency and higher resilience, which is a potential future enhancement. To wrap up, the system architecture centers on cloud-managed blob storage, elastic transcoding pipelines modeled as DAGs, a sharded and cached metadata store, and CDN-based streaming with adaptive protocols. Strong encryption across storage and delivery layers, asynchronous workflows with queues, robust observability, and cost optimization through caching are foundational pillars. We still have open questions around the exact codec and bitrate ladder, encryption details, autoscaling heuristics for transcoding, and advanced cost control mechanisms."
+    },
+    {
+      "speaker": "A",
+      "text": "That summarizes it well. Next steps would be to draft detailed designs for the transcoding pipeline with explicit DAG components, define initial encoding ladder configurations with input from device usage data, and prototype upload multipart mechanics with versioning. Parallelly, we should investigate encryption frameworks suitable for both storage and streaming, and establish monitoring strategies covering all critical points from upload to playback. We can also run cost models using projected traffic and egress scenarios to refine caching and CDN configurations. Does that match your expectations for forward planning?"
+    },
+    {
+      "speaker": "B",
+      "text": "Absolutely. Also, I’d suggest starting a proof-of-concept for the metadata sharding and cache layers since metadata consistency and performance often drive system responsiveness. That will inform how fast we can surface new or updated videos after transcoding. With those pieces progressing, we can iterate on the pipeline orchestration and operational controls. Overall, the design aligns with industry best practices and balances scalability, latency, security, and cost — a good foundation to build on."
+    }
+  ],
+  "approved_script_hash": "",
+  "rendered_script_hash": "",
+  "audio_url": ""
+}
